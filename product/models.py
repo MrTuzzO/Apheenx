@@ -21,10 +21,10 @@ class Product(models.Model):
     name = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255, unique=True, db_index=True)
     description = models.TextField(blank=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     stock = models.PositiveIntegerField()
     price_off = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True, validators=[MinValueValidator(0), MaxValueValidator(100)], help_text='Discount percentage (0-100)')
-    category = models.ForeignKey(ProductCategory, related_name='products', on_delete=models.CASCADE)
+    category = models.ForeignKey(ProductCategory, related_name='products', on_delete=models.CASCADE, db_index=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft', db_index=True)
     is_featured = models.BooleanField(default=False, db_index=True)
 

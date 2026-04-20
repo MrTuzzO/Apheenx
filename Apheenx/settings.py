@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     # Local
     'user',
     'product',
+    'video',
 ]
 
 MIDDLEWARE = [
