@@ -1,5 +1,6 @@
+from django.conf import settings
 from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MinValueValidator
 
 STATUS_CHOICES = (
     ('draft', 'Draft'),
@@ -12,9 +13,10 @@ class VideoCategory(models.Model):
 
     def __str__(self):
         return self.name
-    
+
     class Meta:
         verbose_name_plural = 'Video Categories'
+
 
 class Video(models.Model):
     title = models.CharField(max_length=255)
@@ -26,6 +28,9 @@ class Video(models.Model):
     thumbnail = models.ImageField(upload_to='video_thumbnails/', blank=True, null=True)
     trailer = models.FileField(upload_to='video_trailers/', blank=True, null=True)
     main_video = models.FileField(upload_to='videos/', blank=True, null=True)
+    duration = models.PositiveIntegerField(null=True, blank=True, help_text='Video duration in seconds')
+    views_count = models.PositiveIntegerField(default=0)
+    income = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     is_featured = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -35,3 +40,27 @@ class Video(models.Model):
 
     def __str__(self):
         return f'{self.title} - {self.category.name} - {self.price} - {self.status}'
+
+    @property
+    def duration_display(self):
+        if not self.duration:
+            return None
+        hours, remainder = divmod(self.duration, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours:
+            return f'{hours:02d}:{minutes:02d}:{seconds:02d}'
+        return f'{minutes:02d}:{seconds:02d}'
+
+
+class VideoUnlock(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='unlocked_videos',)
+    video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='unlocks')
+    payment_reference = models.CharField(max_length=255, blank=True)
+    unlocked_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'video')
+        ordering = ['-unlocked_at']
+
+    def __str__(self):
+        return f'{self.user} → {self.video.title}'

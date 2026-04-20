@@ -22,6 +22,7 @@ urlpatterns = [
 
     path('api/v1/auth/', include('user.urls')),
     path('api/v1/', include('product.urls')),
+    path('api/v1/', include('video.urls')),
 ]
 
 if settings.DEBUG:

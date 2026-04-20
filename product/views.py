@@ -24,6 +24,12 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering_fields = ['price', 'created_at', 'stock']
     ordering = ['-created_at']
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.user.is_staff:
+            return qs
+        return qs.filter(status='active')
+
     def get_serializer_class(self):
         if self.action == 'list':
             return ProductListSerializer
