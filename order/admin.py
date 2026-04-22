@@ -1,16 +1,5 @@
 from django.contrib import admin
-from order.models import  Cart, CartItem, Order, OrderItem
-
-class CartItemInline(admin.TabularInline):
-    model = CartItem
-    extra = 0
-
-
-@admin.register(Cart)
-class CartAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'updated_at')
-    search_fields = ('user__email',)
-    inlines = [CartItemInline]
+from order.models import Order, OrderItem
 
 
 class OrderItemInline(admin.TabularInline):
@@ -22,7 +11,7 @@ class OrderItemInline(admin.TabularInline):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'status', 'total_price', 'created_at')
-    list_filter = ('status',)
+    list_display = ('id', 'user', 'order_status', 'total_price', 'created_at')
+    list_filter = ('order_status',)
     search_fields = ('user__email',)
     inlines = [OrderItemInline]

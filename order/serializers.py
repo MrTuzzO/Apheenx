@@ -3,44 +3,8 @@ from rest_framework.exceptions import ValidationError
 from django.db import transaction
 from decimal import Decimal
 
-from order.models import Cart, CartItem, Order, OrderItem
+from order.models import Order, OrderItem
 from product.models import Product
-
-
-class CartItemSerializer(serializers.ModelSerializer):
-    product_id = serializers.IntegerField(source='product.id', read_only=True)
-    product_name = serializers.CharField(source='product.name', read_only=True)
-    product_slug = serializers.CharField(source='product.slug', read_only=True)
-    unit_price = serializers.DecimalField(source='product.final_price', max_digits=10, decimal_places=2, read_only=True)
-    subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-
-    class Meta:
-        model = CartItem
-        fields = ['id', 'product_id', 'product_name', 'product_slug', 'quantity', 'unit_price', 'subtotal']
-
-
-class CartSerializer(serializers.ModelSerializer):
-    items = CartItemSerializer(many=True, read_only=True)
-    total_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-    total_items = serializers.IntegerField(read_only=True)
-
-    class Meta:
-        model = Cart
-        fields = ['id', 'items', 'total_items', 'total_price', 'updated_at']
-
-
-class AddCartItemSerializer(serializers.Serializer):
-    product_id = serializers.IntegerField()
-    quantity = serializers.IntegerField(min_value=1, default=1)
-
-    def validate_product_id(self, value):
-        if not Product.objects.filter(id=value, status='active').exists():
-            raise serializers.ValidationError('Product not found or not available.')
-        return value
-
-
-class UpdateCartItemSerializer(serializers.Serializer):
-    quantity = serializers.IntegerField(min_value=1)
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -87,6 +51,10 @@ class AdminOrderSerializer(serializers.ModelSerializer):
 
 
 class CheckoutSerializer(serializers.Serializer):
+    class CheckoutItemInputSerializer(serializers.Serializer):
+        product_id = serializers.IntegerField(min_value=1)
+        quantity = serializers.IntegerField(min_value=1)
+
     full_name = serializers.CharField(max_length=150)
     email = serializers.EmailField()
     phone = serializers.CharField(max_length=20)
@@ -94,69 +62,68 @@ class CheckoutSerializer(serializers.Serializer):
     city = serializers.CharField(max_length=100)
     postal_code = serializers.CharField(max_length=20)
     country = serializers.CharField(max_length=100)
+    items = CheckoutItemInputSerializer(many=True, allow_empty=False, write_only=True)
 
     def validate(self, data):
-        user = self.context['request'].user
-        cart_items = (
-            CartItem.objects
-            .filter(cart__user=user)
-            .select_related('product')
-        )
+        items = data['items']
+        product_ids = [item['product_id'] for item in items]
 
-        if not cart_items.exists():
-            raise serializers.ValidationError('Your cart is empty.')
+        if len(product_ids) != len(set(product_ids)):
+            raise serializers.ValidationError({'items': 'Duplicate products are not allowed.'})
+
+        products = Product.objects.filter(id__in=product_ids).only('id', 'name', 'status', 'stock')
+        product_map = {product.id: product for product in products}
 
         errors = []
-        for item in cart_items:
-            product = item.product
-            if product.status != 'active':
-                errors.append(f'"{product.name}" is no longer available.')
-            elif product.stock < item.quantity:
+        for item in items:
+            product = product_map.get(item['product_id'])
+            if product is None or product.status != 'active':
+                errors.append(f'Product #{item["product_id"]} is not available.')
+                continue
+            if product.stock < item['quantity']:
                 errors.append(f'Not enough stock for "{product.name}" (available: {product.stock}).')
 
         if errors:
-            raise serializers.ValidationError(errors)
+            raise serializers.ValidationError({'items': errors})
 
-        self._cart_items = cart_items
         return data
 
     def create(self, validated_data):
         user = self.context['request'].user
+        items_data = validated_data.pop('items')
+        product_ids = [item['product_id'] for item in items_data]
 
         with transaction.atomic():
-            cart_items = (
-                CartItem.objects
-                .filter(cart__user=user)
-                .select_related('product')
-                .select_for_update()
-            )
+            products = Product.objects.select_for_update().filter(id__in=product_ids)
+            product_map = {product.id: product for product in products}
 
             order = Order.objects.create(user=user, **validated_data)
             total_price = Decimal('0.00')
             order_items = []
 
-            for item in cart_items:
-                product = item.product
-                if product.status != 'active' or product.stock < item.quantity:
+            for item in items_data:
+                product = product_map.get(item['product_id'])
+                quantity = item['quantity']
+
+                if product is None or product.status != 'active' or product.stock < quantity:
                     raise ValidationError(
-                        f'"{product.name}" is no longer available or out of stock.'
+                        f'Product #{item["product_id"]} is no longer available or out of stock.'
                     )
+
                 unit_price = product.final_price
                 order_items.append(OrderItem(
                     order=order,
                     product=product,
                     product_name=product.name,
                     unit_price=unit_price,
-                    quantity=item.quantity,
+                    quantity=quantity,
                 ))
-                total_price += unit_price * item.quantity
-                product.stock -= item.quantity
+                total_price += unit_price * quantity
+                product.stock -= quantity
                 product.save(update_fields=['stock', 'updated_at'])
 
             OrderItem.objects.bulk_create(order_items)
             order.total_price = total_price
             order.save(update_fields=['total_price'])
-            Cart.objects.filter(user=user).first().items.all().delete()
 
         return order
-
