@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'product',
     'video',
     'order',
+    'wishlist',
 ]
 
 MIDDLEWARE = [

@@ -15,6 +15,8 @@ class OrderViewSet(
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Order.objects.none()
         return (
             Order.objects
             .filter(user=self.request.user)
@@ -53,7 +55,7 @@ class AdminOrderViewSet(
         )
         status_filter = self.request.query_params.get('status')
         if status_filter:
-            qs = qs.filter(status=status_filter)
+            qs = qs.filter(order_status=status_filter)
         return qs
 
     def partial_update(self, request, *args, **kwargs):

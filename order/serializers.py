@@ -17,6 +17,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(source='order_status', choices=Order._meta.get_field('order_status').choices)
     items = OrderItemSerializer(many=True, read_only=True)
 
     class Meta:
@@ -30,6 +31,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
 
 class AdminOrderSerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(source='order_status', choices=Order._meta.get_field('order_status').choices)
     items = OrderItemSerializer(many=True, read_only=True)
     user_email = serializers.EmailField(source='user.email', read_only=True)
     user_name = serializers.CharField(source='user.name', read_only=True)
