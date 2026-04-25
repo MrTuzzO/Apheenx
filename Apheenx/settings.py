@@ -151,6 +151,8 @@ SIMPLE_JWT = {
 
 OTP_EXPIRY_MINUTES = int(os.getenv('OTP_EXPIRY_MINUTES', 10))
 
+REFRESH_TOKEN_COOKIE = 'refresh_token'
+
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND','django.core.mail.backends.console.EmailBackend')
 EMAIL_HOST = os.getenv('EMAIL_HOST', '')
@@ -162,3 +164,9 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@apheenx.com')
 
 
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',') if origin.strip()]
+
+FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
+PAYPAL_MODE = os.getenv('PAYPAL_MODE', 'sandbox')
+PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID', '')
+PAYPAL_CLIENT_SECRET = os.getenv('PAYPAL_CLIENT_SECRET', '')
+PAYPAL_WEBHOOK_ID = os.getenv('PAYPAL_WEBHOOK_ID', '')

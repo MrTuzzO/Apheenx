@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -17,6 +18,23 @@ from .serializers import (
     VerifyEmailSerializer,
 )
 from .utils import send_otp_email
+
+
+COOKIE_NAME = getattr(settings, "REFRESH_TOKEN_COOKIE", "refresh_token")
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    refresh_lifetime = settings.SIMPLE_JWT.get("REFRESH_TOKEN_LIFETIME")
+    max_age = int(refresh_lifetime.total_seconds()) if refresh_lifetime else 7 * 24 * 3600
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        max_age=max_age,
+        httponly=True,
+        secure=not settings.DEBUG,  # HTTPS only in production
+        samesite="Lax",
+        path="/",
+    )
 
 
 class RegisterView(APIView):
@@ -73,20 +91,22 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        return Response(
+        response = Response(
             {
                 "access": data["access"],
-                "refresh": data["refresh"],
                 "user": UserProfileSerializer(data["user"]).data,
             }
         )
+        _set_refresh_cookie(response, data["refresh"])
+        return response
 
 
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        refresh_token = request.data.get("refresh")
+        # Accept token from cookie first, fall back to request body
+        refresh_token = request.COOKIES.get(COOKIE_NAME) or request.data.get("refresh")
         if not refresh_token:
             return Response(
                 {"detail": "Refresh token is required."},
@@ -99,7 +119,9 @@ class LogoutView(APIView):
                 {"detail": "Invalid or already-expired token."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        return Response({"detail": "Logged out successfully."})
+        response = Response({"detail": "Logged out successfully."})
+        response.delete_cookie(COOKIE_NAME, path="/")
+        return response
 
 
 class ProfileView(APIView):
