@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Order, OrderItem, PAYMENT_STATUS_CHOICES, ORDER_STATUS_CHOICES
-
+from video.models import VideoOrder
 
 class OrderItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
@@ -59,3 +59,32 @@ class CreateOrderSerializer(serializers.Serializer):
 
 class UpdateOrderStatusSerializer(serializers.Serializer):
     order_status = serializers.ChoiceField(choices=ORDER_STATUS_CHOICES)
+
+
+# ______Video Order Serializer______
+
+class VideoOrderSerializer(serializers.ModelSerializer):
+    video_title = serializers.CharField(source='video.title', read_only=True)
+    video_thumbnail = serializers.SerializerMethodField()
+    is_paid = serializers.BooleanField(read_only=True)
+    video_slug = serializers.CharField(source='video.slug', read_only=True)
+
+    class Meta:
+        model = VideoOrder
+        fields = [
+            'id', 'video', 'video_title', 'video_slug', 'video_thumbnail',
+            'paypal_order_id', 'payment_status', 'is_paid',
+            'amount', 'created_at',
+        ]
+        read_only_fields = fields
+
+    def get_video_thumbnail(self, obj):
+        if not obj.video.thumbnail:
+            return None
+        url = obj.video.thumbnail.url
+        request = self.context.get('request')
+        return request.build_absolute_uri(url) if request else url
+
+
+class CreateVideoOrderSerializer(serializers.Serializer):
+    video_id = serializers.IntegerField()

@@ -3,11 +3,6 @@ from .paypal_client import paypal_request
 
 
 def create_paypal_order(order) -> tuple[str, str]:
-    """
-    Build PayPal order from an Order instance.
-    Returns (paypal_order_id, approval_url).
-    """
-    # Build line items from order items
     paypal_items = []
     for item in order.items.select_related('product'):
         paypal_items.append({
@@ -21,7 +16,7 @@ def create_paypal_order(order) -> tuple[str, str]:
 
     currency = "USD"
     purchase_unit = {
-        "reference_id": str(order.id),
+        "reference_id": f"product_{order.id}", 
         "description": f"Order #{order.id}",
         "amount": {
             "currency_code": currency,
@@ -41,7 +36,7 @@ def create_paypal_order(order) -> tuple[str, str]:
                 "admin_area_1": order.state,
                 "admin_area_2": order.city,
                 "postal_code": order.postal_code,
-                "country_code": "US",
+                "country_code": order.country_code if hasattr(order, 'country_code') else "US",
             },
         },
     }
@@ -51,8 +46,39 @@ def create_paypal_order(order) -> tuple[str, str]:
         "purchase_units": [purchase_unit],
         "application_context": {
             "brand_name": "Apheenx",
-            "landing_page": "BILLING",
+            "landing_page": "NO_PREFERENCE",
             "user_action": "PAY_NOW",
+            "shipping_preference": "SET_PROVIDED_ADDRESS",
+            "return_url": f"{settings.FRONTEND_BASE_URL}/payment/success",
+            "cancel_url": f"{settings.FRONTEND_BASE_URL}/payment/cancel",
+        },
+    })
+
+    paypal_order_id = result["id"]
+    approval_url = next(
+        link["href"] for link in result["links"] if link["rel"] == "approve"
+    )
+    return paypal_order_id, approval_url
+
+
+def create_paypal_video_order(order) -> tuple[str, str]:
+    result = paypal_request("POST", "/v2/checkout/orders", {
+        "intent": "CAPTURE",
+        "purchase_units": [
+            {
+                "reference_id": f"video_{order.id}",
+                "description": f"Video: {order.video.title[:127]}",
+                "amount": {
+                    "currency_code": "USD",
+                    "value": str(order.amount),
+                },
+            }
+        ],
+        "application_context": {
+            "brand_name": "Apheenx",
+            "landing_page": "NO_PREFERENCE",
+            "user_action": "PAY_NOW",
+            "shipping_preference": "NO_SHIPPING",
             "return_url": f"{settings.FRONTEND_BASE_URL}/payment/success",
             "cancel_url": f"{settings.FRONTEND_BASE_URL}/payment/cancel",
         },

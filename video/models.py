@@ -2,6 +2,13 @@ from django.conf import settings
 from django.db import models
 from django.core.validators import MinValueValidator
 
+PAYMENT_STATUS_CHOICES = (
+    ('pending', 'Pending'),
+    ('captured', 'Captured'),
+    ('failed', 'Failed'),
+    ('refunded', 'Refunded'),
+)
+
 STATUS_CHOICES = (
     ('draft', 'Draft'),
     ('published', 'Published'),
@@ -52,15 +59,21 @@ class Video(models.Model):
         return f'{minutes:02d}:{seconds:02d}'
 
 
-class VideoUnlock(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='unlocked_videos',)
-    video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='unlocks')
-    payment_reference = models.CharField(max_length=255, blank=True)
-    unlocked_at = models.DateTimeField(auto_now_add=True)
+class VideoOrder(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='video_orders',)
+    video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='orders')
+    paypal_order_id = models.CharField(max_length=150, unique=True, null=True, blank=True)
+    payment_status = models.CharField(max_length=10, choices=PAYMENT_STATUS_CHOICES, default='pending', db_index=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        ordering = ['-created_at']
         unique_together = ('user', 'video')
-        ordering = ['-unlocked_at']
+
+    @property
+    def is_paid(self):
+        return self.payment_status == 'captured'
 
     def __str__(self):
-        return f'{self.user} → {self.video.title}'
+        return f'{self.user} | {self.video.title} | {self.payment_status}'

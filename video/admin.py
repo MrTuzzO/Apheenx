@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Video, VideoCategory, VideoUnlock
+from .models import Video, VideoCategory, VideoOrder
 
 
 @admin.register(VideoCategory)
@@ -28,10 +28,10 @@ class VideoAdmin(admin.ModelAdmin):
         return obj.duration_display or '—'
 
 
-@admin.register(VideoUnlock)
-class VideoUnlockAdmin(admin.ModelAdmin):
-    list_display = ('user', 'video', 'payment_reference', 'unlocked_at')
-    list_filter = ('unlocked_at',)
-    search_fields = ('user__email', 'video__title', 'payment_reference')
+@admin.register(VideoOrder)
+class VideoOrderAdmin(admin.ModelAdmin):
+    list_display = ('user', 'video', 'paypal_order_id', 'created_at', 'payment_status', 'amount')
+    list_filter = ('payment_status',)
+    search_fields = ('user__email', 'video__title', 'paypal_order_id')
     raw_id_fields = ('user', 'video')
-    readonly_fields = ('unlocked_at',)
+    readonly_fields = ('created_at',)

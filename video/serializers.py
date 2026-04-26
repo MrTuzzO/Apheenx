@@ -1,7 +1,7 @@
 from django.utils.text import slugify
 from rest_framework import serializers
 
-from .models import Video, VideoCategory, VideoUnlock
+from .models import Video, VideoCategory, VideoOrder
 
 
 class VideoCategorySerializer(serializers.ModelSerializer):
@@ -39,7 +39,7 @@ class VideoListSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        return VideoUnlock.objects.filter(user=request.user, video=obj).exists()
+        return VideoOrder.objects.filter(user=request.user, video=obj, payment_status='captured').exists()
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -72,15 +72,16 @@ class VideoDetailSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
-        return VideoUnlock.objects.filter(user=request.user, video=obj).exists()
+        return VideoOrder.objects.filter(user=request.user, video=obj, payment_status='captured').exists()
 
     def get_main_video_url(self, obj):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return None
-        if VideoUnlock.objects.filter(user=request.user, video=obj).exists() and obj.main_video:
+        has_access = VideoOrder.objects.filter(user=request.user, video=obj, payment_status='captured').exists()
+        if has_access:
             return request.build_absolute_uri(obj.main_video.url)
-        return None
+        return None 
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

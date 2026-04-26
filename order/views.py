@@ -9,13 +9,10 @@ from rest_framework.views import APIView
 import json
 from product.models import Product
 from .models import Order, OrderItem
-from .serializers import (
-    OrderSerializer,
-    CreateOrderSerializer,
-    UpdateOrderStatusSerializer,
-)
-from .paypal_service import create_paypal_order, capture_paypal_order
+from .serializers import *
+from .paypal_service import create_paypal_order, capture_paypal_order, create_paypal_video_order
 from .paypal_client import verify_paypal_webhook
+from video.models import Video, VideoOrder
 
 
 class CreateOrderView(APIView):
@@ -133,10 +130,6 @@ class CreateOrderView(APIView):
 
 
 class CapturePaymentView(APIView):
-    """
-    POST /api/payments/orders/{order_id}/capture/
-    Call after user approves on PayPal and is redirected back.
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, order_id):
@@ -190,7 +183,6 @@ class CapturePaymentView(APIView):
 
 
 class OrderDetailView(APIView):
-    """GET /api/payments/orders/{order_id}/"""
     permission_classes = [IsAuthenticated]
 
     def get(self, request, order_id):
@@ -257,47 +249,180 @@ class UpdateOrderStatusView(APIView):
         })
 
 
+# --------------------------------------------------------------------
+# Video orders (no shipping, no line items)---------------------------
+# --------------------------------------------------------------------
+
+class CreateVideoOrderView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = CreateVideoOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        video = get_object_or_404(Video, id=serializer.validated_data['video_id'], status='published')
+
+        existing = VideoOrder.objects.filter(user=request.user, video=video).first()
+        if existing:
+            if existing.is_paid:
+                return Response(
+                    {"detail": "You already own this video."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            # Pending order exists — return it so frontend can resume
+            return Response({
+                "detail": "You have a pending order. Complete your payment.",
+                "order_id": existing.id,
+                "paypal_order_id": existing.paypal_order_id,
+                "amount": str(existing.amount),
+            }, status=status.HTTP_200_OK)
+
+        order = VideoOrder.objects.create(
+            user=request.user,
+            video=video,
+            amount=video.price,
+        )
+
+        try:
+            paypal_order_id, approval_url = create_paypal_video_order(order)
+        except Exception as e:
+            order.payment_status = 'failed'
+            order.save()
+            return Response(
+                {"detail": f"PayPal error: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        order.paypal_order_id = paypal_order_id
+        order.save()
+
+        return Response({
+            "order_id": order.id,
+            "paypal_order_id": paypal_order_id,
+            "approval_url": approval_url,
+            "amount": str(video.price),
+            "currency": "USD",
+        }, status=status.HTTP_201_CREATED)
+
+
+class CaptureVideoPaymentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, order_id):
+        order = get_object_or_404(VideoOrder, id=order_id, user=request.user)
+
+        if order.payment_status == 'captured':
+            return Response(
+                {"detail": "Already paid.", "order": VideoOrderSerializer(order, context={'request': request}).data},
+                status=status.HTTP_200_OK
+            )
+        if order.payment_status == 'failed':
+            return Response(
+                {"detail": "Order failed. Please create a new order."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            result = capture_paypal_order(order.paypal_order_id)
+        except Exception as e:
+            order.payment_status = 'failed'
+            order.save()
+            return Response(
+                {"detail": f"Capture failed: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        if result.get('status') != 'COMPLETED':
+            order.payment_status = 'failed'
+            order.save()
+            return Response(
+                {"detail": f"PayPal returned: {result.get('status')}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            order.payment_status = 'captured'
+            order.save()
+            Video.objects.filter(id=order.video_id).update(
+                income=models.F('income') + order.amount
+            )
+
+        return Response({
+            "detail": "Payment successful. You can now watch the video.",
+            "order": VideoOrderSerializer(order, context={'request': request}).data,
+        })
+
+
+class UserVideoOrderListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        orders = VideoOrder.objects.filter(
+            user=request.user,
+            payment_status='captured'
+        ).select_related('video')
+        return Response(VideoOrderSerializer(orders, many=True, context={'request': request}).data)
+    
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class PayPalWebhookView(APIView):   
-    """
-    POST /api/payments/webhook/paypal/
-    Safety net — fulfills order if user closes browser after paying.
-    Register this URL in PayPal Developer Dashboard.
-    """
     authentication_classes = []
     permission_classes = []
 
     def post(self, request):
+        if not verify_paypal_webhook(request.headers, request.body):
+            return Response(status=status.HTTP_400_BAD_REQUEST)
+        
         try:
             payload = json.loads(request.body)
         except json.JSONDecodeError:
             return Response(status=status.HTTP_400_BAD_REQUEST)
 
-        # Verify the webhook is genuinely from PayPal
-        if not verify_paypal_webhook(request.headers, request.body):
-            return Response(status=status.HTTP_400_BAD_REQUEST)
 
         if payload.get('event_type') == 'PAYMENT.CAPTURE.COMPLETED':
             try:
                 reference_id = (
-                    payload['resource']
-                    ['purchase_units'][0]
-                    ['reference_id']
+                    payload['resource']['purchase_units'][0]['reference_id']
                 )
-                order = Order.objects.get(id=int(reference_id))
 
-                if order.payment_status != 'captured':
-                    with transaction.atomic():
-                        order.payment_status = 'captured'
-                        order.order_status = 'processing'
-                        order.save()
+                order_type, order_id = reference_id.split('_', 1)
+                order_id = int(order_id)
 
-                        for item in order.items.select_related('product'):
-                            Product.objects.filter(id=item.product_id).update(
-                                stock=models.F('stock') - item.quantity
-                            )
+            except (KeyError, IndexError, TypeError, ValueError):
+                return Response({"status": "ok"})
 
-            except (Order.DoesNotExist, KeyError, IndexError, TypeError):
-                pass
+            if order_type == 'video':
+                self._fulfill_video_order(order_id)
+            elif order_type == 'product':
+                self._fulfill_product_order(order_id)
 
         return Response({"status": "ok"})
+    
+    def _fulfill_video_order(self, order_id: int) -> None:
+        try:
+            order = VideoOrder.objects.get(id=order_id)
+            if not order.is_paid:
+                with transaction.atomic():
+                    order.payment_status = 'captured'
+                    order.save()
+                    Video.objects.filter(id=order.video_id).update(
+                        income=models.F('income') + order.amount
+                    )
+        except VideoOrder.DoesNotExist:
+            pass
+
+    def _fulfill_product_order(self, order_id: int) -> None:
+        try:
+            order = Order.objects.get(id=order_id)
+            if order.payment_status != 'captured':
+                with transaction.atomic():
+                    order.payment_status = 'captured'
+                    order.order_status = 'processing'
+                    order.save()
+                    for item in order.items.select_related('product'):
+                        Product.objects.filter(id=item.product_id).update(
+                            stock=models.F('stock') - item.quantity
+                        )
+        except Order.DoesNotExist:
+            pass
