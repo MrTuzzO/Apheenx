@@ -5,6 +5,7 @@ from django.conf.urls.static import static
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
+from video.views import protected_video_media
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -19,6 +20,7 @@ schema_view = get_schema_view(
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('media/videos/<path:path>', protected_video_media, name='protected-video-media'),
 
     path('api/v1/auth/', include('user.urls')),
     path('api/v1/', include('product.urls')),
