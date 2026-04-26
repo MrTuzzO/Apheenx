@@ -58,7 +58,6 @@ class VideoDetailSerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(queryset=VideoCategory.objects.all())
     duration_display = serializers.SerializerMethodField()
     is_unlocked = serializers.SerializerMethodField()
-    main_video_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Video
@@ -74,24 +73,17 @@ class VideoDetailSerializer(serializers.ModelSerializer):
             return False
         return VideoOrder.objects.filter(user=request.user, video=obj, payment_status='captured').exists()
 
-    def get_main_video_url(self, obj):
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            return None
-        has_access = VideoOrder.objects.filter(user=request.user, video=obj, payment_status='captured').exists()
-        if has_access:
-            return request.build_absolute_uri(obj.main_video.url)
-        return None 
-
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
         is_staff = request and request.user.is_authenticated and request.user.is_staff
         if is_staff:
             data.pop('is_unlocked', None)
-            data.pop('main_video_url', None)
         else:
             data.pop('income', None)
+            data.pop('status', None)
+            data.pop('main_video', None)
+
         return data
 
     def _unique_slug(self, title, exclude_pk=None):

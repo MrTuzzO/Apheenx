@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 import json
 from product.models import Product
+from user.permission import IsAdmin, IsAdminOrReadOnly
 from .models import Order, OrderItem
 from .serializers import *
 from .paypal_service import create_paypal_order, capture_paypal_order, create_paypal_video_order
@@ -220,7 +221,7 @@ class UpdateOrderStatusView(APIView):
     Staff only.
     Body: { "order_status": "shipped" }
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdmin]
 
     def patch(self, request, order_id):
         if not request.user.is_staff:

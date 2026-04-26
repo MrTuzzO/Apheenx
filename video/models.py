@@ -33,7 +33,7 @@ class Video(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft', db_index=True)
     thumbnail = models.ImageField(upload_to='video_thumbnails/', blank=True, null=True)
-    trailer = models.FileField(upload_to='video_trailers/', blank=True, null=True)
+    trailer = models.FileField(upload_to='video_trailers/')
     main_video = models.FileField(upload_to='videos/', blank=True, null=True)
     duration = models.PositiveIntegerField(null=True, blank=True, help_text='Video duration in seconds')
     views_count = models.PositiveIntegerField(default=0)
