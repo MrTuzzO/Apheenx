@@ -1,10 +1,11 @@
 from django.conf import settings
 from rest_framework import status
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
+from user.permission import IsAdmin
 
 from .models import OTP, User
 from .serializers import (
@@ -183,3 +184,15 @@ class ResetPasswordView(APIView):
         user.save(update_fields=["password"])
 
         return Response({"detail": "Password reset successfully. You can now log in."})
+    
+
+# Admin Views
+class UserListView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
+        users = User.objects.all()
+        serializer = UserProfileSerializer(users, many=True)
+        return Response(serializer.data)

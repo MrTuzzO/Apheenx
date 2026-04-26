@@ -27,6 +27,7 @@ urlpatterns = [
     path('api/v1/', include('video.urls')),
     path('api/v1/', include('order.urls')),
     path('api/v1/', include('wishlist.urls')),
+    path('api/v1/', include('core.urls')),
 ]
 
 if settings.DEBUG:
