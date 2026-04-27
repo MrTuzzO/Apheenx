@@ -9,17 +9,9 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import OTP, User
-from .serializers import (
-    ChangePasswordSerializer,
-    ForgotPasswordSerializer,
-    LoginSerializer,
-    RegisterSerializer,
-    ResendOTPSerializer,
-    ResetPasswordSerializer,
-    UserProfileSerializer,
-    VerifyEmailSerializer,
-)
+from .serializers import *
 from .utils import send_otp_email
+from core.response import SuccessResponse, ErrorResponse
 
 
 COOKIE_NAME = getattr(settings, "REFRESH_TOKEN_COOKIE", "refresh_token")
@@ -28,13 +20,22 @@ COOKIE_NAME = getattr(settings, "REFRESH_TOKEN_COOKIE", "refresh_token")
 def _set_refresh_cookie(response: Response, token: str) -> None:
     refresh_lifetime = settings.SIMPLE_JWT.get("REFRESH_TOKEN_LIFETIME")
     max_age = int(refresh_lifetime.total_seconds()) if refresh_lifetime else 7 * 24 * 3600
+    cookie_secure = getattr(settings, "REFRESH_TOKEN_COOKIE_SECURE", not settings.DEBUG)
+    cookie_samesite = getattr(settings, "REFRESH_TOKEN_COOKIE_SAMESITE", "None")
+    cookie_domain = getattr(settings, "REFRESH_TOKEN_COOKIE_DOMAIN", "") or None
+
+    # Browsers reject SameSite=None cookies unless Secure=True.
+    if str(cookie_samesite).lower() == "none" and not cookie_secure:
+        cookie_samesite = "Lax"
+
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         max_age=max_age,
         httponly=True,
-        secure=not settings.DEBUG,  # HTTPS only in production
-        samesite="Lax",
+        secure=cookie_secure,
+        samesite=cookie_samesite,
+        domain=cookie_domain,
         path="/",
     )
 
@@ -97,11 +98,12 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        response = Response(
-            {
+        response = SuccessResponse(
+            data={
                 "access": data["access"],
                 "user": UserProfileSerializer(data["user"]).data,
-            }
+            },
+            message="Login successful.",
         )
         _set_refresh_cookie(response, data["refresh"])
         return response
@@ -139,7 +141,11 @@ class LogoutView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         response = Response({"detail": "Logged out successfully."})
-        response.delete_cookie(COOKIE_NAME, path="/")
+        response.delete_cookie(
+            COOKIE_NAME,
+            path="/",
+            domain=getattr(settings, "REFRESH_TOKEN_COOKIE_DOMAIN", "") or None,
+        )
         return response
 
 

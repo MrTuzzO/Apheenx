@@ -101,10 +101,17 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    role = serializers.SerializerMethodField()
+
+    def get_role(self, obj):
+        if obj.is_superuser or obj.is_staff:
+            return "admin"
+        return "user"
+
     class Meta:
         model = User
-        fields = ("id", "name", "email", "is_email_verified", "created_at")
-        read_only_fields = ("id", "email", "is_email_verified", "created_at")
+        fields = ("id", "name", "email", "role", "is_email_verified", "created_at")
+        read_only_fields = ("id", "email", "role", "is_email_verified", "created_at")
 
 
 

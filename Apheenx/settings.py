@@ -42,14 +42,23 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "authorization",
+    "content-type",
+    "x-csrftoken",
 ]
 
 ROOT_URLCONF = 'Apheenx.urls'
@@ -139,10 +148,11 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+    "DEFAULT_RENDERER_CLASSES": ["core.renderers.StandardRenderer"],
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=7),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -154,7 +164,11 @@ SIMPLE_JWT = {
 OTP_EXPIRY_MINUTES = int(os.getenv('OTP_EXPIRY_MINUTES', 10))
 
 REFRESH_TOKEN_COOKIE = 'refresh_token'
-
+# REFRESH_TOKEN_COOKIE_SECURE = os.getenv('REFRESH_TOKEN_COOKIE_SECURE', str(not DEBUG)).lower() == 'true'
+# REFRESH_TOKEN_COOKIE_SAMESITE = os.getenv('REFRESH_TOKEN_COOKIE_SAMESITE', 'None' if not DEBUG else 'Lax')
+REFRESH_TOKEN_COOKIE_SECURE = not DEBUG          # False in dev (HTTP), True in prod (HTTPS)
+REFRESH_TOKEN_COOKIE_SAMESITE = 'Lax' if DEBUG else 'None'  # Lax in dev, None in prod (cross-origin)
+REFRESH_TOKEN_COOKIE_DOMAIN = os.getenv('REFRESH_TOKEN_COOKIE_DOMAIN', '')
 
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND','django.core.mail.backends.console.EmailBackend')
 EMAIL_HOST = os.getenv('EMAIL_HOST', '')
@@ -167,14 +181,15 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@apheenx.com')
 
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',') if origin.strip()]
 
-FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://localhost:3000')
+FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://10.10.12.45:3000')
 PAYPAL_MODE = os.getenv('PAYPAL_MODE', 'sandbox')
 PAYPAL_CLIENT_ID = os.getenv('PAYPAL_CLIENT_ID', '')
 PAYPAL_CLIENT_SECRET = os.getenv('PAYPAL_CLIENT_SECRET', '')
 PAYPAL_WEBHOOK_ID = os.getenv('PAYPAL_WEBHOOK_ID', '')
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "My API",
+    "TITLE": "Apheenx API",
     "DESCRIPTION": "API documentation",
     "VERSION": "1.0.0",
+    "SCHEMA_PATH_PREFIX": r"/api/v[0-9]",
 }

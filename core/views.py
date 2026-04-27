@@ -16,7 +16,7 @@ from core.response import SuccessResponse, ErrorResponse
 
 User = get_user_model()
 
-
+# For Custom Exception Handling, Error Responses
 class BaseModelViewSet(
     mixins.CreateModelMixin,
     mixins.RetrieveModelMixin,
@@ -68,7 +68,7 @@ class BaseModelViewSet(
         return SuccessResponse(data=None, message="Deleted successfully.", code=204)
 
 
-
+# Utility functions for dashboard stats
 def _month_start(value):
     return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
@@ -89,8 +89,8 @@ def _integer(value):
 
 
 class DashboardStatsView(APIView):
-    permission_classes = [AllowAny]
-    # permission_classes = [IsAdminUser]
+    # permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     
 
     @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT})
@@ -150,8 +150,8 @@ class DashboardStatsView(APIView):
 
 
 class DashboardChartsView(APIView):
-    permission_classes = [AllowAny]
-    # permission_classes = [IsAdminUser]
+    # permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
 
     @extend_schema(
         request=None,
