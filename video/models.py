@@ -70,6 +70,10 @@ class VideoOrder(models.Model):
     class Meta:
         ordering = ['-created_at']
         unique_together = ('user', 'video')
+        indexes = [
+            models.Index(fields=['payment_status', 'created_at'], name='videoord_pay_created_idx'),
+            models.Index(fields=['payment_status', 'video'], name='videoord_pay_video_idx'),
+        ]
 
     @property
     def is_paid(self):

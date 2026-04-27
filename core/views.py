@@ -1,8 +1,10 @@
-from django.db.models import Sum, Count
+from decimal import Decimal
+from django.db.models import Sum, Count, Q
+from django.db.models.functions import TruncMonth
+from django.utils import timezone
 from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAdminUser
 from order.models import Order
 from video.models import VideoOrder, Video
@@ -10,30 +12,53 @@ from video.models import VideoOrder, Video
 User = get_user_model()
 
 
+def _month_start(value):
+    return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _add_months(value, months):
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    return value.replace(year=year, month=month)
+
+
+def _money(value):
+    return float(value or Decimal('0'))
+
+
+def _integer(value):
+    return int(value or 0)
+
+
 class DashboardStatsView(APIView):
-    permission_classes = [AllowAny]
-    # permission_classes = [IsAdminUser]
+    # permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
     
 
     def get(self, request):
         total_users = User.objects.count()
 
-        product_stats = Order.objects.filter(
+        product_stats = Order.objects.order_by().filter(
             payment_status='captured'
         ).aggregate(
             total_product_orders=Count('id'),
             total_product_revenue=Sum('total_price'),
         )
 
-        video_stats = VideoOrder.objects.filter(
+        video_stats = VideoOrder.objects.order_by().filter(
             payment_status='captured'
         ).aggregate(
             total_video_orders=Count('id'),
             total_video_revenue=Sum('amount'),
         )
 
-        total_videos = Video.objects.count()
-        published_videos = Video.objects.filter(status='published').count()
+        video_counts = Video.objects.order_by().aggregate(
+            total=Count('id'),
+            published=Count('id', filter=Q(status='published')),
+        )
+        total_videos = video_counts['total'] or 0
+        published_videos = video_counts['published'] or 0
 
         total_orders = (
             (product_stats['total_product_orders'] or 0) +
@@ -64,3 +89,119 @@ class DashboardStatsView(APIView):
                 "draft": total_videos - published_videos,
             },
         })
+
+
+class DashboardChartsView(APIView):
+    # permission_classes = [AllowAny]
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        months_count = self._get_months_count(request)
+        sales_trend = self._get_sales_trend(months_count)
+        video_performance = self._get_video_performance(request)
+
+        return Response({
+            "sales_trend": sales_trend,
+            "video_performance": video_performance,
+        })
+
+    def _get_months_count(self, request):
+        try:
+            months_count = int(request.query_params.get('months', 6))
+        except (TypeError, ValueError):
+            months_count = 6
+        return min(max(months_count, 1), 24)
+
+    def _get_sales_trend(self, months_count):
+        current_month = _month_start(timezone.now())
+        start_month = _add_months(current_month, -(months_count - 1))
+        end_month = _add_months(current_month, 1)
+
+        month_keys = [
+            _add_months(start_month, index)
+            for index in range(months_count)
+        ]
+        revenue_by_month = {
+            month.strftime('%Y-%m'): Decimal('0')
+            for month in month_keys
+        }
+
+        product_revenue = Order.objects.order_by().filter(
+            payment_status='captured',
+            created_at__gte=start_month,
+            created_at__lt=end_month,
+        ).annotate(
+            month=TruncMonth('created_at')
+        ).values('month').annotate(
+            revenue=Sum('total_price')
+        )
+
+        video_revenue = VideoOrder.objects.order_by().filter(
+            payment_status='captured',
+            created_at__gte=start_month,
+            created_at__lt=end_month,
+        ).annotate(
+            month=TruncMonth('created_at')
+        ).values('month').annotate(
+            revenue=Sum('amount')
+        )
+
+        for row in product_revenue:
+            revenue_by_month[row['month'].strftime('%Y-%m')] += row['revenue'] or Decimal('0')
+
+        for row in video_revenue:
+            revenue_by_month[row['month'].strftime('%Y-%m')] += row['revenue'] or Decimal('0')
+
+        return {
+            "labels": [month.strftime('%b') for month in month_keys],
+            "values": [_money(revenue_by_month[month.strftime('%Y-%m')]) for month in month_keys],
+        }
+
+    def _get_video_performance(self, request):
+        metric = request.query_params.get('video_metric', 'views')
+        if metric not in {'views', 'revenue', 'orders'}:
+            metric = 'views'
+
+        limit = self._get_limit(request)
+
+        if metric == 'revenue':
+            rows = VideoOrder.objects.order_by().filter(
+                payment_status='captured'
+            ).values(
+                'video__category__name'
+            ).annotate(
+                value=Sum('amount')
+            ).order_by('-value')[:limit]
+        elif metric == 'orders':
+            rows = VideoOrder.objects.order_by().filter(
+                payment_status='captured'
+            ).values(
+                'video__category__name'
+            ).annotate(
+                value=Count('id')
+            ).order_by('-value')[:limit]
+        else:
+            rows = Video.objects.order_by().values(
+                'category__name'
+            ).annotate(
+                value=Sum('views_count')
+            ).order_by('-value')[:limit]
+
+        return {
+            "metric": metric,
+            "labels": [
+                row.get('category__name') or row.get('video__category__name')
+                for row in rows
+            ],
+            "values": [
+                _money(row['value']) if metric == 'revenue' else _integer(row['value'])
+                for row in rows
+            ],
+        }
+
+    def _get_limit(self, request):
+        try:
+            limit = int(request.query_params.get('limit', 5))
+        except (TypeError, ValueError):
+            limit = 5
+        return min(max(limit, 1), 20)

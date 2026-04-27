@@ -38,6 +38,9 @@ class Order(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['payment_status', 'created_at'], name='order_pay_created_idx'),
+        ]
 
     def __str__(self):
         return f'Order #{self.id} - {self.user.email} - {self.order_status}'
