@@ -1,4 +1,6 @@
 from decimal import Decimal
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from django.db.models import Sum, Count, Q
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
@@ -8,8 +10,63 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAdminUser
 from order.models import Order
 from video.models import VideoOrder, Video
+from rest_framework import mixins
+from rest_framework.viewsets import GenericViewSet
+from core.response import SuccessResponse, ErrorResponse
 
 User = get_user_model()
+
+
+class BaseModelViewSet(
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    mixins.ListModelMixin,
+    GenericViewSet
+):
+    """
+    Base ViewSet. Override create/list/retrieve etc. to return
+    SuccessResponse instead of plain Response.
+    """
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        return SuccessResponse(
+            data=serializer.data,
+            message="Created successfully.",
+            code=201,
+        )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return SuccessResponse(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return SuccessResponse(data=serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return SuccessResponse(data=serializer.data, message="Updated successfully.")
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return SuccessResponse(data=None, message="Deleted successfully.", code=204)
+
 
 
 def _month_start(value):
@@ -32,10 +89,11 @@ def _integer(value):
 
 
 class DashboardStatsView(APIView):
-    # permission_classes = [AllowAny]
-    permission_classes = [IsAdminUser]
+    permission_classes = [AllowAny]
+    # permission_classes = [IsAdminUser]
     
 
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT})
     def get(self, request):
         total_users = User.objects.count()
 
@@ -69,7 +127,7 @@ class DashboardStatsView(APIView):
             (video_stats['total_video_revenue'] or 0)
         )
 
-        return Response({
+        return SuccessResponse({
             "users": {
                 "total": total_users,
             },
@@ -92,15 +150,40 @@ class DashboardStatsView(APIView):
 
 
 class DashboardChartsView(APIView):
-    # permission_classes = [AllowAny]
-    permission_classes = [IsAdminUser]
+    permission_classes = [AllowAny]
+    # permission_classes = [IsAdminUser]
 
+    @extend_schema(
+        request=None,
+        parameters=[
+            OpenApiParameter(
+                name="months",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Number of months to include in sales trend. Min 1, max 24.",
+            ),
+            OpenApiParameter(
+                name="video_metric",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                enum=["views", "revenue", "orders"],
+                description="Metric for video performance chart.",
+            ),
+            OpenApiParameter(
+                name="limit",
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description="Maximum video categories to return. Min 1, max 20.",
+            ),
+        ],
+        responses={200: OpenApiTypes.OBJECT},
+    )
     def get(self, request):
         months_count = self._get_months_count(request)
         sales_trend = self._get_sales_trend(months_count)
         video_performance = self._get_video_performance(request)
 
-        return Response({
+        return SuccessResponse({
             "sales_trend": sales_trend,
             "video_performance": video_performance,
         })

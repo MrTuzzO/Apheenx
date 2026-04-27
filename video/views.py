@@ -1,6 +1,8 @@
 import os
 import mimetypes
 from django.db.models import F
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from rest_framework import filters, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -73,6 +75,7 @@ class VideoAccessCheckView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT})
     def get(self, request, video_id):
         has_access = VideoOrder.objects.filter(
             user=request.user,
@@ -85,6 +88,7 @@ class VideoAccessCheckView(APIView):
 class VideoStreamView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: OpenApiTypes.BINARY})
     def get(self, request, video_id):
         video = get_object_or_404(Video, id=video_id, status='published')
 

@@ -2,14 +2,17 @@ from django.db import models, transaction
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import status
+from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 import json
 from product.models import Product
 from user.permission import IsAdmin, IsAdminOrReadOnly
-from .models import Order, OrderItem
+from .models import ORDER_STATUS_CHOICES, PAYMENT_STATUS_CHOICES, Order, OrderItem
 from .serializers import *
 from .paypal_service import create_paypal_order, capture_paypal_order, create_paypal_video_order
 from .paypal_client import verify_paypal_webhook
@@ -40,6 +43,7 @@ class CreateOrderView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=CreateOrderSerializer, responses={201: OpenApiTypes.OBJECT})
     def post(self, request):
         serializer = CreateOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -133,6 +137,7 @@ class CreateOrderView(APIView):
 class CapturePaymentView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT})
     def post(self, request, order_id):
         order = get_object_or_404(Order, id=order_id, user=request.user)
 
@@ -186,6 +191,7 @@ class CapturePaymentView(APIView):
 class OrderDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(responses={200: OrderSerializer})
     def get(self, request, order_id):
         order = get_object_or_404(
             Order.objects.prefetch_related('items__product'),
@@ -202,6 +208,23 @@ class UserOrderListView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name="payment_status",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                enum=[choice[0] for choice in PAYMENT_STATUS_CHOICES],
+            ),
+            OpenApiParameter(
+                name="order_status",
+                type=str,
+                location=OpenApiParameter.QUERY,
+                enum=[choice[0] for choice in ORDER_STATUS_CHOICES],
+            ),
+        ],
+        responses={200: OrderSerializer(many=True)},
+    )
     def get(self, request):
         orders = Order.objects.filter(
             user=request.user
@@ -223,6 +246,7 @@ class UpdateOrderStatusView(APIView):
     """
     permission_classes = [IsAdmin]
 
+    @extend_schema(request=UpdateOrderStatusSerializer, responses={200: OpenApiTypes.OBJECT})
     def patch(self, request, order_id):
         if not request.user.is_staff:
             return Response(
@@ -257,6 +281,7 @@ class UpdateOrderStatusView(APIView):
 class CreateVideoOrderView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=CreateVideoOrderSerializer, responses={201: OpenApiTypes.OBJECT})
     def post(self, request):
         serializer = CreateVideoOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -309,6 +334,7 @@ class CreateVideoOrderView(APIView):
 class CaptureVideoPaymentView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT})
     def post(self, request, order_id):
         order = get_object_or_404(VideoOrder, id=order_id, user=request.user)
 
@@ -357,6 +383,7 @@ class CaptureVideoPaymentView(APIView):
 class UserVideoOrderListView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(responses={200: VideoOrderSerializer(many=True)})
     def get(self, request):
         orders = VideoOrder.objects.filter(
             user=request.user,
@@ -371,6 +398,16 @@ class PayPalWebhookView(APIView):
     authentication_classes = []
     permission_classes = []
 
+    @extend_schema(
+        request=inline_serializer(
+            name="PayPalWebhookRequest",
+            fields={
+                "event_type": serializers.CharField(required=False),
+                "resource": serializers.DictField(required=False),
+            },
+        ),
+        responses={200: OpenApiTypes.OBJECT},
+    )
     def post(self, request):
         if not verify_paypal_webhook(request.headers, request.body):
             return Response(status=status.HTTP_400_BAD_REQUEST)

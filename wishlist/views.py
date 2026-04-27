@@ -1,6 +1,8 @@
 from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -22,6 +24,9 @@ class ProductWishlistListView(generics.ListAPIView):
     serializer_class = ProductWishlistSerializer
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Product.objects.none()
+
         # Step 1: one tiny query — just the IDs
         wishlisted_ids = (
             WishlistItem.objects
@@ -46,6 +51,7 @@ class ProductWishlistListView(generics.ListAPIView):
 class ProductWishlistToggleView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT, 201: OpenApiTypes.OBJECT})
     def post(self, request, product_id):
         get_object_or_404(Product, pk=product_id, status="active")
         ct = _ct(Product)
@@ -87,6 +93,9 @@ class VideoWishlistListView(generics.ListAPIView):
     serializer_class = VideoWishlistSerializer
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Video.objects.none()
+
         # Step 1: one tiny query — just the IDs
         wishlisted_ids = (
             WishlistItem.objects
@@ -109,6 +118,7 @@ class VideoWishlistListView(generics.ListAPIView):
 class VideoWishlistToggleView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT, 201: OpenApiTypes.OBJECT})
     def post(self, request, video_id):
         get_object_or_404(Video, pk=video_id, status="published")
         ct = _ct(Video)
