@@ -1,6 +1,4 @@
 from django.conf import settings
-from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import status
 from rest_framework import serializers
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
@@ -12,6 +10,10 @@ from .models import OTP, User
 from .serializers import *
 from .utils import send_otp_email
 from core.response import SuccessResponse, ErrorResponse
+
+# for Api documentation
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema, inline_serializer
 
 
 COOKIE_NAME = getattr(settings, "REFRESH_TOKEN_COOKIE", "refresh_token")
