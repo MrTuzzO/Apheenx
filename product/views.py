@@ -6,20 +6,18 @@ from .serializers import ProductCategorySerializer, ProductListSerializer, Produ
 from user.permission import IsAdminOrReadOnly
 from rest_framework.decorators import action
 
-
 class ProductCategoryViewSet(viewsets.ModelViewSet):
     queryset = ProductCategory.objects.all()
     serializer_class = ProductCategorySerializer
     permission_classes = [IsAdminOrReadOnly]
     lookup_field = 'slug'
 
-
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related('category').prefetch_related('images')
     permission_classes = [IsAdminOrReadOnly]
     lookup_field = 'slug'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = {'category__slug': ['exact'], 'status': ['exact'], 'is_featured': ['exact']}
+    filterset_fields = {'category__slug': ['exact'], 'status': ['exact'], 'is_featured': ['exact'], 'price_off': ['gt']}
     search_fields = ['name', 'description', 'category__name']
     ordering_fields = ['price', 'created_at', 'stock']
     ordering = ['-created_at']
@@ -57,12 +55,3 @@ class ProductViewSet(viewsets.ModelViewSet):
                 ProductImage.objects.create(product=product, image=image)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'], url_path='best-deals')
-    def best_deals(self, request):
-        queryset = self.get_queryset().filter(price_off__gt=0)
-        page = self.paginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)

@@ -47,11 +47,18 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     category = serializers.PrimaryKeyRelatedField(queryset=ProductCategory.objects.all())
     discounted_price = serializers.SerializerMethodField()
+    related_products = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
         fields = '__all__'
         read_only_fields = ['slug']
+        extra_fields = ['related_products']
+
+    def get_related_products(self, obj):
+        related = Product.objects.filter(category=obj.category, status='active').exclude(pk=obj.pk)[:9]
+        context = self.context
+        return ProductListSerializer(related, many=True, context=context).data
 
     def get_discounted_price(self, obj):
         return obj.final_price
