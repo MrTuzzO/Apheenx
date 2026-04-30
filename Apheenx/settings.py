@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'django_cleanup.apps.CleanupConfig',
 
     # Local
+    'core',
     'user',
     'product',
     'video',

@@ -6,13 +6,18 @@ from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAdminUser
+from rest_framework.permissions import IsAdminUser
 from order.models import Order
 from video.models import VideoOrder, Video
 from rest_framework import mixins
 from rest_framework.viewsets import GenericViewSet
-from core.response import SuccessResponse, ErrorResponse
+from core.response import SuccessResponse
+from rest_framework.permissions import AllowAny
+from core.models import BusinessSetting
+from core.serializers import BusinessSettingSerializer
+from django.core.cache import cache
+from user.permission import IsAdmin
+from rest_framework.response import Response
 
 User = get_user_model()
 
@@ -86,6 +91,40 @@ def _money(value):
 
 def _integer(value):
     return int(value or 0)
+
+
+class BusinessSettingView(APIView):
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [AllowAny()]
+        return [IsAdmin()]
+
+    def get(self, request):
+        obj = cache.get('business_setting')
+        if obj is None:
+            obj = BusinessSetting.objects.first()
+            cache.set('business_setting', obj, timeout=60*60*24)  # 1 day
+        return Response(BusinessSettingSerializer(obj).data if obj else {})
+
+    def post(self, request):
+        if BusinessSetting.objects.exists():
+            return Response({"detail": "Already exists. Use PATCH to update."}, status=400)
+        serializer = BusinessSettingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        cache.delete('business_setting')
+        return Response(serializer.data, status=201)
+
+    def patch(self, request):
+        obj = BusinessSetting.objects.first()
+        if not obj:
+            return Response({"detail": "Not found. Use POST to create."}, status=404)
+        serializer = BusinessSettingSerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        cache.delete('business_setting')
+        return Response(serializer.data)
 
 
 class DashboardStatsView(APIView):
