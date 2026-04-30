@@ -1,0 +1,14 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apheenx_web
+    command: sh -c "mkdir -p /app/media && touch /app/db.sqlite3 && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+      - ./db.sqlite3:/app/db.sqlite3
+      - ./media:/app/media
+    restart: unless-stopped
