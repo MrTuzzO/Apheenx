@@ -14,6 +14,18 @@ class ProductCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductCategory
         fields = ['id', 'name', 'slug']
+        read_only_fields = ['slug']
+
+    def create(self, validated_data):
+        if 'slug' not in validated_data or not validated_data['slug']:
+            base_slug = slugify(validated_data['name'])
+            slug = base_slug
+            counter = 1
+            while ProductCategory.objects.filter(slug=slug).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            validated_data['slug'] = slug
+        return super().create(validated_data)
 
 
 class ProductListSerializer(serializers.ModelSerializer):
