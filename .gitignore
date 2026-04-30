@@ -7,3 +7,4 @@ db.sqlite3
 *.pyo
 media/
 staticfiles/
+cmd.txt
