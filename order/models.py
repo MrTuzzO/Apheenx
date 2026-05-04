@@ -18,7 +18,6 @@ ORDER_STATUS_CHOICES = (
     ('cancelled', 'Cancelled'),
 )
 
-
 class Order(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='orders', on_delete=models.CASCADE)
     full_name = models.CharField(max_length=150)

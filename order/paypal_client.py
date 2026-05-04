@@ -1,5 +1,8 @@
+import json
+import logging
 import requests
 from django.conf import settings
+logger = logging.getLogger(__name__)
 
 
 def get_paypal_access_token() -> str:
@@ -48,8 +51,17 @@ def verify_paypal_webhook(request_headers: dict, raw_body: bytes) -> bool:
     """
     webhook_id = getattr(settings, "PAYPAL_WEBHOOK_ID", "")
     if not webhook_id:
-        # If no webhook ID configured, skip verification (log a warning in production)
-        return True
+        logger.error(
+            "PAYPAL_WEBHOOK_ID is not configured in settings. "
+            "Rejecting webhook to prevent unauthorized access."
+        )
+        return False
+
+    try:
+        webhook_event = json.loads(raw_body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        logger.warning("PayPal webhook: failed to decode raw body as JSON.")
+        return False
 
     payload = {
         "auth_algo": request_headers.get("PAYPAL-AUTH-ALGO", ""),
@@ -58,11 +70,33 @@ def verify_paypal_webhook(request_headers: dict, raw_body: bytes) -> bool:
         "transmission_sig": request_headers.get("PAYPAL-TRANSMISSION-SIG", ""),
         "transmission_time": request_headers.get("PAYPAL-TRANSMISSION-TIME", ""),
         "webhook_id": webhook_id,
-        "webhook_event": raw_body.decode("utf-8"),
+        "webhook_event": webhook_event,
     }
+
+    missing = [
+        key for key in (
+            "auth_algo",
+            "cert_url",
+            "transmission_id",
+            "transmission_sig",
+            "transmission_time",
+        ) if not payload[key]
+    ]
+    if missing:
+        logger.warning(
+            "PayPal webhook verification missing headers/values: %s",
+            ", ".join(missing),
+        )
 
     try:
         result = paypal_request("POST", "/v1/notifications/verify-webhook-signature", payload)
-        return result.get("verification_status") == "SUCCESS"
-    except Exception:
+        verified = result.get("verification_status") == "SUCCESS"
+        if not verified:
+            logger.warning(
+                "PayPal webhook verification failed. Status: %s",
+                result.get("verification_status"),
+            )
+        return verified
+    except Exception as exc:
+        logger.exception("PayPal webhook verification raised an exception: %s", exc)
         return False

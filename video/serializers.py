@@ -70,12 +70,19 @@ class VideoDetailSerializer(serializers.ModelSerializer):
     category = serializers.PrimaryKeyRelatedField(queryset=VideoCategory.objects.all())
     duration_display = serializers.SerializerMethodField()
     is_unlocked = serializers.SerializerMethodField()
+    related_videos = serializers.SerializerMethodField()
 
     class Meta:
         model = Video
         fields = '__all__'
         read_only_fields = ['slug', 'views_count', 'income', 'created_at', 'updated_at']
+        extra_fields = ['related_videos']
 
+    def get_related_videos(self, obj):
+        related = Video.objects.filter(category=obj.category, status='published').exclude(pk=obj.pk)[:9]
+        context = self.context
+        return VideoListSerializer(related, many=True, context=context).data
+    
     def get_duration_display(self, obj):
         return obj.duration_display
 

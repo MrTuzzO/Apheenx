@@ -1,46 +1,28 @@
+import json
+import logging
 from django.db import models, transaction
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
-from rest_framework import status
-from rest_framework import serializers
+from rest_framework import status, serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-import json
 from product.models import Product
 from user.permission import IsAdmin, IsAdminOrReadOnly
 from .models import ORDER_STATUS_CHOICES, PAYMENT_STATUS_CHOICES, Order, OrderItem
 from .serializers import *
 from .paypal_service import create_paypal_order, capture_paypal_order, create_paypal_video_order
-from .paypal_client import verify_paypal_webhook
+from .paypal_client import verify_paypal_webhook, paypal_request
 from video.models import Video, VideoOrder
+from rest_framework.renderers import JSONRenderer
+
+logger = logging.getLogger(__name__)
 
 
 class CreateOrderView(APIView):
-    """
-    POST /api/payments/orders/
-    Creates order + OrderItems, then creates PayPal order.
-    Returns approval_url for frontend to redirect user.
-
-    Request body:
-        {
-        "full_name": "John Doe",
-        "email": "john@example.com",
-        "phone": "+1-555-1234",
-        "address": "123 Main St",
-        "city": "New York",
-        "state": "FL",
-        "postal_code": "10001",
-        "country": "USA",
-        "items": [
-            {"product_id": 1, "quantity": 2},
-            {"product_id": 4, "quantity": 1}
-        ]
-        }
-    """
     permission_classes = [IsAuthenticated]
 
     @extend_schema(request=CreateOrderSerializer, responses={201: OpenApiTypes.OBJECT})
@@ -239,11 +221,6 @@ class UserOrderListView(APIView):
 
 
 class UpdateOrderStatusView(APIView):
-    """
-    PATCH /api/payments/orders/{order_id}/status/
-    Staff only.
-    Body: { "order_status": "shipped" }
-    """
     permission_classes = [IsAdmin]
 
     @extend_schema(request=UpdateOrderStatusSerializer, responses={200: OpenApiTypes.OBJECT})
@@ -390,53 +367,77 @@ class UserVideoOrderListView(APIView):
             payment_status='captured'
         ).select_related('video')
         return Response(VideoOrderSerializer(orders, many=True, context={'request': request}).data)
-    
 
 
 @method_decorator(csrf_exempt, name='dispatch')
-class PayPalWebhookView(APIView):   
+class PayPalWebhookView(APIView):
     authentication_classes = []
     permission_classes = []
+    renderer_classes = [JSONRenderer]
 
-    @extend_schema(
-        request=inline_serializer(
-            name="PayPalWebhookRequest",
-            fields={
-                "event_type": serializers.CharField(required=False),
-                "resource": serializers.DictField(required=False),
-            },
-        ),
-        responses={200: OpenApiTypes.OBJECT},
-    )
     def post(self, request):
         if not verify_paypal_webhook(request.headers, request.body):
-            return Response(status=status.HTTP_400_BAD_REQUEST)
-        
+            logger.warning("PayPal webhook rejected: verification failed.")
+            return Response({"status": "ignored"}, status=status.HTTP_200_OK)
+
         try:
             payload = json.loads(request.body)
         except json.JSONDecodeError:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+            logger.warning("PayPal webhook rejected: invalid JSON body.")
+            return Response({"status": "ignored"}, status=status.HTTP_200_OK)
 
+        event_type = payload.get('event_type')
+        logger.info("PayPal webhook received: event_type=%s", event_type)
 
-        if payload.get('event_type') == 'PAYMENT.CAPTURE.COMPLETED':
-            try:
-                reference_id = (
-                    payload['resource']['purchase_units'][0]['reference_id']
+        if event_type == 'PAYMENT.CAPTURE.COMPLETED':
+            resolved = self._resolve_reference_id(payload)
+            if not resolved:
+                logger.warning(
+                    "PayPal webhook: could not resolve reference_id from payload."
                 )
-
-                order_type, order_id = reference_id.split('_', 1)
-                order_id = int(order_id)
-
-            except (KeyError, IndexError, TypeError, ValueError):
                 return Response({"status": "ok"})
+
+            order_type, order_id = resolved
 
             if order_type == 'video':
                 self._fulfill_video_order(order_id)
             elif order_type == 'product':
                 self._fulfill_product_order(order_id)
+            else:
+                logger.warning(
+                    "PayPal webhook: unknown order_type '%s' for resolved order id=%s.",
+                    order_type,
+                    order_id,
+                )
 
         return Response({"status": "ok"})
-    
+
+    def _resolve_reference_id(self, payload: dict):
+        try:
+            # Some webhook payloads include purchase_units.reference_id directly.
+            direct_reference_id = payload['resource']['purchase_units'][0]['reference_id']
+            order_type, order_id_str = direct_reference_id.split('_', 1)
+            return order_type, int(order_id_str)
+        except (KeyError, IndexError, TypeError, ValueError):
+            pass
+
+        try:
+            paypal_order_id = payload['resource']['supplementary_data']['related_ids']['order_id']
+        except (KeyError, TypeError):
+            return None
+
+        try:
+            order_result = paypal_request("GET", f"/v2/checkout/orders/{paypal_order_id}")
+            reference_id = order_result['purchase_units'][0]['reference_id']
+            order_type, order_id_str = reference_id.split('_', 1)
+            return order_type, int(order_id_str)
+        except Exception:
+            logger.exception(
+                "PayPal webhook: failed to fetch order details for order_id=%s",
+                paypal_order_id,
+            )
+            return None
+
     def _fulfill_video_order(self, order_id: int) -> None:
         try:
             order = VideoOrder.objects.get(id=order_id)
@@ -447,8 +448,13 @@ class PayPalWebhookView(APIView):
                     Video.objects.filter(id=order.video_id).update(
                         income=models.F('income') + order.amount
                     )
+                logger.info("PayPal webhook: fulfilled VideoOrder id=%s", order_id)
+            else:
+                logger.info(
+                    "PayPal webhook: VideoOrder id=%s already paid, skipping.", order_id
+                )
         except VideoOrder.DoesNotExist:
-            pass
+            logger.warning("PayPal webhook: VideoOrder id=%s not found.", order_id)
 
     def _fulfill_product_order(self, order_id: int) -> None:
         try:
@@ -462,5 +468,10 @@ class PayPalWebhookView(APIView):
                         Product.objects.filter(id=item.product_id).update(
                             stock=models.F('stock') - item.quantity
                         )
+                logger.info("PayPal webhook: fulfilled Order id=%s", order_id)
+            else:
+                logger.info(
+                    "PayPal webhook: Order id=%s already captured, skipping.", order_id
+                )
         except Order.DoesNotExist:
-            pass
+            logger.warning("PayPal webhook: Order id=%s not found.", order_id)
