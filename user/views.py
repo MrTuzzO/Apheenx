@@ -10,6 +10,10 @@ from .models import OTP, User
 from .serializers import *
 from .utils import send_otp_email
 from core.response import SuccessResponse, ErrorResponse
+from rest_framework import generics
+from order.models import Order
+from video.models import VideoOrder
+from order.serializers import OrderSerializer
 
 # for Api documentation
 from drf_spectacular.types import OpenApiTypes
@@ -103,7 +107,7 @@ class LoginView(APIView):
         response = SuccessResponse(
             data={
                 "access": data["access"],
-                "user": UserProfileSerializer(data["user"]).data,
+                "user": UserProfileSerializer(data["user"], context={"request": request}).data,
             },
             message="Login successful.",
         )
@@ -156,11 +160,11 @@ class ProfileView(APIView):
 
     @extend_schema(responses={200: UserProfileSerializer})
     def get(self, request):
-        return Response(UserProfileSerializer(request.user).data)
+        return Response(UserProfileSerializer(request.user, context={"request": request}).data)
 
     @extend_schema(request=UserProfileSerializer, responses={200: UserProfileSerializer})
     def patch(self, request):
-        serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
+        serializer = UserProfileSerializer(request.user, data=request.data, partial=True, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
@@ -218,13 +222,23 @@ class ResetPasswordView(APIView):
     
 
 # Admin Views
-class UserListView(APIView):
+class UserListView(generics.ListAPIView):
     permission_classes = [IsAdminUser]
+    serializer_class = UserProfileSerializer
+    queryset = User.objects.all()
 
-    @extend_schema(responses={200: UserProfileSerializer(many=True)})
+class UserDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
-        if not request.user.is_staff:
-            return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
-        users = User.objects.all()
-        serializer = UserProfileSerializer(users, many=True)
-        return Response(serializer.data)
+        user = request.user
+
+        recent_orders = (
+            Order.objects.filter(user=user).prefetch_related('items__product').order_by('-created_at')[:5]
+        )
+
+        return SuccessResponse({
+            'total_orders': Order.objects.filter(user=user, payment_status='captured').count(),
+            'purchased_videos': VideoOrder.objects.filter(user=user, payment_status='captured').count(),
+            'recent_orders': OrderSerializer(recent_orders, many=True, context={'request': request}).data,
+        })

@@ -102,16 +102,26 @@ class LoginSerializer(serializers.Serializer):
 
 class UserProfileSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
+    profile_image = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ("id", "name", "email", "profile_image", "role", "is_email_verified", "created_at")
+        read_only_fields = ("id", "email", "role", "is_email_verified", "created_at")
 
     def get_role(self, obj):
         if obj.is_superuser or obj.is_staff:
             return "admin"
         return "user"
 
-    class Meta:
-        model = User
-        fields = ("id", "name", "email", "role", "is_email_verified", "created_at")
-        read_only_fields = ("id", "email", "role", "is_email_verified", "created_at")
+    def get_profile_image(self, obj):
+        request = self.context.get('request')
+        if obj.profile_image:
+            url = obj.profile_image.url
+            if request is not None:
+                return request.build_absolute_uri(url)
+            return url
+        return None
 
 
 

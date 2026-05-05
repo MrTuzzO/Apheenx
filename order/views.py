@@ -18,6 +18,7 @@ from .paypal_service import create_paypal_order, capture_paypal_order, create_pa
 from .paypal_client import verify_paypal_webhook, paypal_request
 from video.models import Video, VideoOrder
 from rest_framework.renderers import JSONRenderer
+from core.pagination import StandardPagination
 
 logger = logging.getLogger(__name__)
 
@@ -184,10 +185,6 @@ class OrderDetailView(APIView):
 
 
 class UserOrderListView(APIView):
-    """
-    GET /api/payments/orders/
-    Filters: ?payment_status=captured  ?order_status=shipped
-    """
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
@@ -217,7 +214,10 @@ class UserOrderListView(APIView):
         if request.query_params.get('order_status'):
             orders = orders.filter(order_status=request.query_params['order_status'])
 
-        return Response(OrderSerializer(orders, many=True).data)
+        paginator = StandardPagination()
+        paginated_orders = paginator.paginate_queryset(orders, request, view=self)
+        serializer = OrderSerializer(paginated_orders, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
 
 class UpdateOrderStatusView(APIView):
@@ -366,7 +366,10 @@ class UserVideoOrderListView(APIView):
             user=request.user,
             payment_status='captured'
         ).select_related('video')
-        return Response(VideoOrderSerializer(orders, many=True, context={'request': request}).data)
+        paginator = StandardPagination()
+        paginated_orders = paginator.paginate_queryset(orders, request, view=self)
+        serializer = VideoOrderSerializer(paginated_orders, many=True, context={'request': request})
+        return paginator.get_paginated_response(serializer.data)
 
 
 @method_decorator(csrf_exempt, name='dispatch')

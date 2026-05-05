@@ -1,6 +1,4 @@
-import secrets
 from datetime import timedelta
-
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
@@ -32,6 +30,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    profile_image = models.ImageField(upload_to="profile_images/", blank=True, null=True)
 
     objects = UserManager()
 

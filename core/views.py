@@ -30,10 +30,6 @@ class BaseModelViewSet(
     mixins.ListModelMixin,
     GenericViewSet
 ):
-    """
-    Base ViewSet. Override create/list/retrieve etc. to return
-    SuccessResponse instead of plain Response.
-    """
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
