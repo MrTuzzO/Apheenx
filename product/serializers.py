@@ -7,7 +7,7 @@ from django.utils.text import slugify
 class ProductImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductImage
-        fields = ['image']
+        fields = ['id', 'image']
 
 
 class ProductCategorySerializer(serializers.ModelSerializer):

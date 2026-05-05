@@ -3,8 +3,9 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from .models import ProductCategory, Product, ProductImage
 from .serializers import ProductCategorySerializer, ProductListSerializer, ProductDetailSerializer
-from user.permission import IsAdminOrReadOnly
+from user.permission import IsAdminOrReadOnly, IsAdmin
 from rest_framework.decorators import action
+from django.shortcuts import get_object_or_404
 
 class ProductCategoryViewSet(viewsets.ModelViewSet):
     queryset = ProductCategory.objects.all()
@@ -47,11 +48,22 @@ class ProductViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
-        product = serializer.save()
-        images = request.FILES.getlist('images')
-        if images:
-            product.images.all().delete()
-            for image in images:
-                ProductImage.objects.create(product=product, image=image)
+        serializer.save()
         return Response(serializer.data)
 
+    @action(detail=True, methods=['post'], url_path='images/add', permission_classes=[IsAdmin])
+    def add_images(self, request, slug=None):
+        product = self.get_object()
+        images = request.FILES.getlist('images')
+        if not images:
+            return Response({"detail": "No images provided."}, status=400)
+        for image in images:
+            ProductImage.objects.create(product=product, image=image)
+        return Response(ProductDetailSerializer(product, context={'request': request}).data)
+
+    @action(detail=True, methods=['delete'], url_path='images/(?P<image_id>[^/.]+)', permission_classes=[IsAdmin])
+    def delete_image(self, request, slug=None, image_id=None):
+        product = self.get_object()
+        image = get_object_or_404(ProductImage, id=image_id, product=product)
+        image.delete()
+        return Response({"detail": "Image deleted."}, status=204)
