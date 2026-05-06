@@ -299,13 +299,13 @@ class CreateVideoOrderView(APIView):
                     status=status.HTTP_502_BAD_GATEWAY
                 )
 
-            return Response({
+            return SuccessResponse({
                 "detail": "You have a pending order. Complete your payment.",
                 "order_id": existing.id,
                 "paypal_order_id": paypal_order_id,
                 "approval_url": approval_url,
                 "amount": str(existing.amount),
-            }, status=status.HTTP_200_OK)
+            })
 
         order = VideoOrder.objects.create(
             user=request.user,
@@ -334,7 +334,7 @@ class CreateVideoOrderView(APIView):
             "approval_url": approval_url,
             "amount": str(video.price),
             "currency": "USD",
-        }, status=status.HTTP_201_CREATED)
+        })
 
 
 class CaptureVideoPaymentView(APIView):
