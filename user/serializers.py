@@ -104,10 +104,22 @@ class UserProfileSerializer(serializers.ModelSerializer):
     role = serializers.SerializerMethodField()
     profile_image = serializers.SerializerMethodField()
 
+
     class Meta:
         model = User
         fields = ("id", "name", "email", "profile_image", "role", "is_email_verified", "created_at")
         read_only_fields = ("id", "email", "role", "is_email_verified", "created_at")
+
+    def update(self, instance, validated_data):
+        profile_image = self.context["request"].FILES.get("profile_image")
+        if profile_image is not None:
+            instance.profile_image = profile_image
+        elif "profile_image" in self.context["request"].data and not self.context["request"].FILES.get("profile_image"):
+            instance.profile_image = None
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
 
     def get_role(self, obj):
         if obj.is_superuser or obj.is_staff:

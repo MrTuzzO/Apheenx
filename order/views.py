@@ -1,7 +1,9 @@
 import json
 import logging
+from datetime import timedelta
 from django.db import models, transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from drf_spectacular.types import OpenApiTypes
@@ -18,9 +20,24 @@ from .paypal_service import create_paypal_order, capture_paypal_order, create_pa
 from .paypal_client import verify_paypal_webhook, paypal_request
 from video.models import Video, VideoOrder
 from rest_framework.renderers import JSONRenderer
+from core.response import SuccessResponse
 from core.pagination import StandardPagination
 
 logger = logging.getLogger(__name__)
+
+
+PAYPAL_ORDER_EXPIRY_HOURS = 3
+
+def _resolve_or_regenerate_video_approval(existing_order: VideoOrder) -> tuple[str, str]:
+    if existing_order.is_paypal_order_active:
+        return existing_order.paypal_order_id, existing_order.paypal_approval_url
+
+    new_paypal_order_id, new_approval_url = create_paypal_video_order(existing_order)
+    existing_order.paypal_order_id = new_paypal_order_id
+    existing_order.paypal_approval_url = new_approval_url
+    existing_order.paypal_order_expires_at = timezone.now() + timedelta(hours=PAYPAL_ORDER_EXPIRY_HOURS)
+    existing_order.save(update_fields=["paypal_order_id", "paypal_approval_url", "paypal_order_expires_at"])
+    return new_paypal_order_id, new_approval_url
 
 
 class CreateOrderView(APIView):
@@ -236,7 +253,7 @@ class UpdateOrderStatusView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        if not order.is_paid and data['order_status'] != 'cancelled':
+        if not order.payment_status == 'captured' and data['order_status'] != 'cancelled':
             return Response(
                 {"detail": "Cannot update fulfillment status of an unpaid order."},
                 status=status.HTTP_400_BAD_REQUEST
@@ -272,11 +289,21 @@ class CreateVideoOrderView(APIView):
                     {"detail": "You already own this video."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            # Pending order exists — return it so frontend can resume
+            # Pending order exists; reuse active PayPal order or regenerate if expired.
+            try:
+                paypal_order_id, approval_url = _resolve_or_regenerate_video_approval(existing)
+            except Exception as e:
+                logger.exception("Failed to get approval URL for pending VideoOrder id=%s", existing.id)
+                return Response(
+                    {"detail": f"PayPal error: {str(e)}"},
+                    status=status.HTTP_502_BAD_GATEWAY
+                )
+
             return Response({
                 "detail": "You have a pending order. Complete your payment.",
                 "order_id": existing.id,
-                "paypal_order_id": existing.paypal_order_id,
+                "paypal_order_id": paypal_order_id,
+                "approval_url": approval_url,
                 "amount": str(existing.amount),
             }, status=status.HTTP_200_OK)
 
@@ -297,9 +324,11 @@ class CreateVideoOrderView(APIView):
             )
 
         order.paypal_order_id = paypal_order_id
-        order.save()
+        order.paypal_approval_url = approval_url
+        order.paypal_order_expires_at = timezone.now() + timedelta(hours=PAYPAL_ORDER_EXPIRY_HOURS)
+        order.save(update_fields=['paypal_order_id', 'paypal_approval_url', 'paypal_order_expires_at'])
 
-        return Response({
+        return SuccessResponse({
             "order_id": order.id,
             "paypal_order_id": paypal_order_id,
             "approval_url": approval_url,
