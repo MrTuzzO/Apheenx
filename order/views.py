@@ -299,7 +299,7 @@ class CreateVideoOrderView(APIView):
                     status=status.HTTP_502_BAD_GATEWAY
                 )
 
-            return SuccessResponse({
+            return Response({
                 "detail": "You have a pending order. Complete your payment.",
                 "order_id": existing.id,
                 "paypal_order_id": paypal_order_id,
@@ -328,7 +328,8 @@ class CreateVideoOrderView(APIView):
         order.paypal_order_expires_at = timezone.now() + timedelta(hours=PAYPAL_ORDER_EXPIRY_HOURS)
         order.save(update_fields=['paypal_order_id', 'paypal_approval_url', 'paypal_order_expires_at'])
 
-        return SuccessResponse({
+        return Response({
+            "detail": "Order created. Complete your payment.",
             "order_id": order.id,
             "paypal_order_id": paypal_order_id,
             "approval_url": approval_url,
@@ -337,7 +338,7 @@ class CreateVideoOrderView(APIView):
         })
 
 
-class CaptureVideoPaymentView(APIView):
+class CaptureVideoPaymentView(APIView): 
     permission_classes = [IsAuthenticated]
 
     @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT})
