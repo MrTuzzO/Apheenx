@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'video',
     'order',
     'wishlist',
+    'announcement',
 ]
 
 MIDDLEWARE = [
