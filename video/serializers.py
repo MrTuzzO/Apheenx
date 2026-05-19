@@ -101,7 +101,7 @@ class VideoDetailSerializer(serializers.ModelSerializer):
         else:
             data.pop('income', None)
             data.pop('status', None)
-            # data.pop('main_video', None)
+            data.pop('main_video', None)
 
         return data
 

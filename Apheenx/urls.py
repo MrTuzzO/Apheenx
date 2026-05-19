@@ -13,7 +13,7 @@ from django.views.static import serve
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    # path('media/videos/<path:path>', protected_video_media, name='protected-video-media'),
+    path('media/videos/<path:path>', protected_video_media, name='protected-video-media'),
     path("schema/", SpectacularAPIView.as_view(), name="schema"),
     path("docs/", SpectacularSwaggerView.as_view(url_name="schema")),
     path("redoc/", SpectacularRedocView.as_view(url_name="schema")),
@@ -26,8 +26,8 @@ urlpatterns = [
     path('api/v1/', include('core.urls')),
     path('api/v1/', include('announcement.urls')),
 
-    re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
-    re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
+    # re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+    # re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
 ]
 
 if settings.DEBUG:
