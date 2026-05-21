@@ -215,3 +215,8 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     "SCHEMA_PATH_PREFIX": r"/api/v[0-9]",
 }
+
+# Keep uploads mostly on disk, not RAM
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # 5 MB
+# Optional hard cap at app level = 1 GB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1073741824
