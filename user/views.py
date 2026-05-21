@@ -14,6 +14,8 @@ from rest_framework import generics
 from order.models import Order
 from video.models import VideoOrder
 from order.serializers import OrderSerializer
+from rest_framework.throttling import ScopedRateThrottle
+from django.db import transaction
 
 # for Api documentation
 from drf_spectacular.types import OpenApiTypes
@@ -184,6 +186,8 @@ class ChangePasswordView(APIView):
 
 class ForgotPasswordView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "forgot_password"
 
     @extend_schema(request=ForgotPasswordSerializer, responses={200: OpenApiTypes.OBJECT})
     def post(self, request):
@@ -200,6 +204,33 @@ class ForgotPasswordView(APIView):
             {"detail": "If an account with that email exists, a password reset OTP has been sent."}
         )
 
+class VerifyPasswordResetOTPView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "verify_reset_otp"
+
+    @extend_schema(request=VerifyPasswordResetOTPSerializer, responses={200: OpenApiTypes.OBJECT})
+    def post(self, request):
+        serializer = VerifyPasswordResetOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data["user"]
+        otp_obj = serializer.validated_data["otp_obj"]
+
+        with transaction.atomic():
+            otp_obj.is_used = True
+            otp_obj.save(update_fields=["is_used"])
+            reset_token, _ = PasswordResetToken.create_for_user(user)
+
+        expiry = getattr(settings, "PASSWORD_RESET_TOKEN_EXPIRY_MINUTES", 10)
+        return Response(
+            {
+                "detail": "OTP verified",
+                "reset_token": reset_token,
+                "expires_in_minutes": expiry,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 class ResetPasswordView(APIView):
     permission_classes = [AllowAny]
@@ -210,15 +241,18 @@ class ResetPasswordView(APIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data["user"]
-        otp_obj = serializer.validated_data["otp_obj"]
+        token_obj = serializer.validated_data["token_obj"]
 
-        otp_obj.is_used = True
-        otp_obj.save(update_fields=["is_used"])
+        with transaction.atomic():
+            token_obj.is_used = True
+            token_obj.save(update_fields=["is_used"])
+            user.set_password(serializer.validated_data["new_password"])
+            user.save(update_fields=["password"])
 
-        user.set_password(serializer.validated_data["new_password"])
-        user.save(update_fields=["password"])
-
-        return Response({"detail": "Password reset successfully. You can now log in."})
+        return Response(
+            {"detail": "Password reset successfully. You can now log in."},
+            status=status.HTTP_200_OK,
+        )
     
 
 # Admin Views

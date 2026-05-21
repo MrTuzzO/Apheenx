@@ -1,10 +1,10 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
-
+from django.conf import settings
 from .models import OTP, User
 from .utils import send_otp_email
-
+from .models import PasswordResetToken
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, validators=[validate_password])
@@ -160,9 +160,44 @@ class ForgotPasswordSerializer(serializers.Serializer):
 
 
 
-class ResetPasswordSerializer(serializers.Serializer):
+class VerifyPasswordResetOTPSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6, min_length=6)
+
+    def validate(self, attrs):
+        generic_error = {"otp": "Invalid or expired OTP."}
+
+        try:
+            user = User.objects.get(email=attrs["email"])
+        except User.DoesNotExist:
+            raise serializers.ValidationError(generic_error)
+
+        otp_obj = (
+            OTP.objects
+            .filter(user=user, purpose=OTP.PURPOSE_PASSWORD_RESET, is_used=False)
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not otp_obj or otp_obj.is_expired or otp_obj.attempts_exceeded:
+            raise serializers.ValidationError(generic_error)
+
+        if otp_obj.code != attrs["otp"]:
+            otp_obj.attempts += 1
+            update_fields = ["attempts"]
+            if otp_obj.attempts >= getattr(settings, "OTP_MAX_ATTEMPTS", 5):
+                otp_obj.is_used = True
+                update_fields.append("is_used")
+            otp_obj.save(update_fields=update_fields)
+            raise serializers.ValidationError(generic_error)
+
+        attrs["user"] = user
+        attrs["otp_obj"] = otp_obj
+        return attrs
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    reset_token = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, validators=[validate_password])
     new_password_confirm = serializers.CharField(write_only=True)
 
@@ -170,19 +205,18 @@ class ResetPasswordSerializer(serializers.Serializer):
         if attrs["new_password"] != attrs["new_password_confirm"]:
             raise serializers.ValidationError({"new_password": "Passwords do not match."})
 
-        try:
-            user = User.objects.get(email=attrs["email"])
-        except User.DoesNotExist:
-            raise serializers.ValidationError({"email": "User not found."})
-
-        otp_obj = (
-            OTP.objects
-            .filter(user=user, code=attrs["otp"], purpose=OTP.PURPOSE_PASSWORD_RESET, is_used=False)
-            .last()
+        token_obj = (
+            PasswordResetToken.objects
+            .select_related("user")
+            .filter(
+                token_hash=PasswordResetToken.hash_token(attrs["reset_token"]),
+                is_used=False,
+            )
+            .first()
         )
-        if not otp_obj or otp_obj.is_expired:
-            raise serializers.ValidationError({"otp": "Invalid or expired OTP."})
+        if not token_obj or token_obj.is_expired:
+            raise serializers.ValidationError({"reset_token": "Invalid or expired reset token."})
 
-        attrs["user"] = user
-        attrs["otp_obj"] = otp_obj
+        attrs["user"] = token_obj.user
+        attrs["token_obj"] = token_obj
         return attrs
