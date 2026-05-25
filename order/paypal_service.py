@@ -2,6 +2,11 @@ from django.conf import settings
 from .paypal_client import paypal_request
 
 
+def _build_frontend_payment_url(path: str, order_type: str, order_id: int) -> str:
+    base_url = settings.FRONTEND_BASE_URL.rstrip('/')
+    return f"{base_url}{path}?order_type={order_type}&order_id={order_id}"
+
+
 def create_paypal_order(order) -> tuple[str, str]:
     paypal_items = []
     for item in order.items.select_related('product'):
@@ -49,8 +54,8 @@ def create_paypal_order(order) -> tuple[str, str]:
             "landing_page": "NO_PREFERENCE",
             "user_action": "PAY_NOW",
             "shipping_preference": "SET_PROVIDED_ADDRESS",
-            "return_url": f"{settings.FRONTEND_BASE_URL}/payment/success",
-            "cancel_url": f"{settings.FRONTEND_BASE_URL}/payment/cancel",
+            "return_url": _build_frontend_payment_url("/payment/success", "product", order.id),
+            "cancel_url": _build_frontend_payment_url("/payment/cancel", "product", order.id),
         },
     })
 
@@ -79,8 +84,8 @@ def create_paypal_video_order(order) -> tuple[str, str]:
             "landing_page": "NO_PREFERENCE",
             "user_action": "PAY_NOW",
             "shipping_preference": "NO_SHIPPING",
-            "return_url": f"{settings.FRONTEND_BASE_URL}/payment/success",
-            "cancel_url": f"{settings.FRONTEND_BASE_URL}/payment/cancel",
+            "return_url": _build_frontend_payment_url("/payment/success", "video", order.id),
+            "cancel_url": _build_frontend_payment_url("/payment/cancel", "video", order.id),
         },
     })
 
