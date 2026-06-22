@@ -40,7 +40,8 @@ class ProductListSerializer(serializers.ModelSerializer):
     
     def get_primary_image(self, obj):
         request = self.context.get('request')
-        image = obj.images.first()
+        images = list(obj.images.all())
+        image = images[0] if images else None
         if image:
             url = image.image.url
             if request is not None:
@@ -68,7 +69,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         extra_fields = ['related_products']
 
     def get_related_products(self, obj):
-        related = Product.objects.filter(category=obj.category, status='active').exclude(pk=obj.pk)[:9]
+        related = Product.objects.select_related('category').prefetch_related('images').filter(category=obj.category, status='active').exclude(pk=obj.pk)[:9]
         context = self.context
         return ProductListSerializer(related, many=True, context=context).data
 

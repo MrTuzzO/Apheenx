@@ -51,6 +51,9 @@ class VideoListSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
+        unlocked_ids = self.context.get('unlocked_ids')
+        if unlocked_ids is not None:
+            return obj.id in unlocked_ids
         return VideoOrder.objects.filter(user=request.user, video=obj, payment_status='captured').exists()
 
     def to_representation(self, instance):
@@ -79,10 +82,10 @@ class VideoDetailSerializer(serializers.ModelSerializer):
         extra_fields = ['related_videos']
 
     def get_related_videos(self, obj):
-        related = Video.objects.filter(category=obj.category, status='published').exclude(pk=obj.pk)[:9]
+        related = Video.objects.select_related('category').filter(category=obj.category, status='published').exclude(pk=obj.pk)[:9]
         context = self.context
         return VideoListSerializer(related, many=True, context=context).data
-    
+
     def get_duration_display(self, obj):
         return obj.duration_display
 
@@ -90,6 +93,9 @@ class VideoDetailSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if not request or not request.user.is_authenticated:
             return False
+        unlocked_ids = self.context.get('unlocked_ids')
+        if unlocked_ids is not None:
+            return obj.id in unlocked_ids
         return VideoOrder.objects.filter(user=request.user, video=obj, payment_status='captured').exists()
 
     def to_representation(self, instance):

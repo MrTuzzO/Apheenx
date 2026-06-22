@@ -47,6 +47,17 @@ class VideoViewSet(viewsets.ModelViewSet):
             return VideoListSerializer
         return VideoDetailSerializer
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        request = self.request
+        if request and request.user.is_authenticated:
+            context['unlocked_ids'] = set(
+                VideoOrder.objects.filter(
+                    user=request.user, payment_status='captured'
+                ).values_list('video_id', flat=True)
+            )
+        return context
+
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         Video.objects.filter(pk=instance.pk).update(views_count=F('views_count') + 1)
@@ -57,13 +68,16 @@ class VideoViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='my-unlocked', permission_classes=[IsAuthenticated])
     def my_unlocked(self, request):
-        unlocked_ids = VideoOrder.objects.filter(user=request.user, payment_status='captured').values_list('video_id', flat=True)
+        unlocked_ids = set(
+            VideoOrder.objects.filter(user=request.user, payment_status='captured').values_list('video_id', flat=True)
+        )
         queryset = self.get_queryset().filter(pk__in=unlocked_ids)
+        context = {'request': request, 'unlocked_ids': unlocked_ids}
         page = self.paginate_queryset(queryset)
         if page is not None:
-            serializer = VideoListSerializer(page, many=True, context={'request': request})
+            serializer = VideoListSerializer(page, many=True, context=context)
             return self.get_paginated_response(serializer.data)
-        serializer = VideoListSerializer(queryset, many=True, context={'request': request})
+        serializer = VideoListSerializer(queryset, many=True, context=context)
         return Response(serializer.data)
 
 

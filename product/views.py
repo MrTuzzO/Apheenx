@@ -38,8 +38,11 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         product = serializer.save()
-        for image in request.FILES.getlist('images'):
-            ProductImage.objects.create(product=product, image=image)
+        images = request.FILES.getlist('images')
+        if images:
+            ProductImage.objects.bulk_create(
+                [ProductImage(product=product, image=image) for image in images]
+            )
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
@@ -57,8 +60,9 @@ class ProductViewSet(viewsets.ModelViewSet):
         images = request.FILES.getlist('images')
         if not images:
             return Response({"detail": "No images provided."}, status=400)
-        for image in images:
-            ProductImage.objects.create(product=product, image=image)
+        ProductImage.objects.bulk_create(
+            [ProductImage(product=product, image=image) for image in images]
+        )
         return Response(ProductDetailSerializer(product, context={'request': request}).data)
 
     @action(detail=True, methods=['delete'], url_path='images/(?P<image_id>[^/.]+)', permission_classes=[IsAdmin])
