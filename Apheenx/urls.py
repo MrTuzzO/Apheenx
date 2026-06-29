@@ -14,9 +14,9 @@ from django.views.static import serve
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('media/videos/<path:path>', protected_video_media, name='protected-video-media'),
-    path("schema/", SpectacularAPIView.as_view(), name="schema"),
-    path("docs/", SpectacularSwaggerView.as_view(url_name="schema")),
-    path("redoc/", SpectacularRedocView.as_view(url_name="schema")),
+    # path("schema/", SpectacularAPIView.as_view(), name="schema"),
+    # path("docs/", SpectacularSwaggerView.as_view(url_name="schema")),
+    # path("redoc/", SpectacularRedocView.as_view(url_name="schema")),
 
     path('api/v1/auth/', include('user.urls')),
     path('api/v1/', include('product.urls')),
