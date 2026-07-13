@@ -22,6 +22,7 @@ from video.models import Video, VideoOrder
 from rest_framework.renderers import JSONRenderer
 from core.response import SuccessResponse
 from core.pagination import StandardPagination
+from .emails import send_admin_order_notification
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,9 @@ class CapturePaymentView(APIView):
                 Product.objects.filter(id=item.product_id).update(
                     stock=models.F('stock') - item.quantity
                 )
+
+        # Send async email to admin
+        send_admin_order_notification(order.id)
 
         return Response({
             "detail": "Payment successful.",
@@ -505,6 +509,10 @@ class PayPalWebhookView(APIView):
                         Product.objects.filter(id=item.product_id).update(
                             stock=models.F('stock') - item.quantity
                         )
+                
+                # Send async email to admin
+                send_admin_order_notification(order.id)
+                
                 logger.info("PayPal webhook: fulfilled Order id=%s", order_id)
             else:
                 logger.info(
