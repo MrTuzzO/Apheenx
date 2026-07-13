@@ -222,9 +222,13 @@ class UserOrderListView(APIView):
         responses={200: OrderSerializer(many=True)},
     )
     def get(self, request):
-        orders = Order.objects.filter(
-            user=request.user
-        ).prefetch_related('items__product')
+        # Staff can see ALL orders; regular users only see their own.
+        if request.user.is_staff:
+            orders = Order.objects.all().prefetch_related('items__product')
+        else:
+            orders = Order.objects.filter(
+                user=request.user
+            ).prefetch_related('items__product')
 
         if request.query_params.get('payment_status'):
             orders = orders.filter(payment_status=request.query_params['payment_status'])
