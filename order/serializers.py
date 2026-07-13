@@ -5,14 +5,24 @@ from video.models import VideoOrder
 class OrderItemSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.name', read_only=True)
     subtotal = serializers.SerializerMethodField()
+    product_image = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderItem
-        fields = ['id', 'product', 'product_name', 'quantity', 'unit_price', 'subtotal']
+        fields = ['id', 'product', 'product_name', 'product_image', 'quantity', 'unit_price', 'subtotal']
         read_only_fields = fields
 
     def get_subtotal(self, obj):
         return obj.subtotal
+
+    def get_product_image(self, obj):
+        if not obj.product:
+            return None
+        first = obj.product.images.first()
+        if not first or not first.image:
+            return None
+        request = self.context.get('request')
+        return request.build_absolute_uri(first.image.url) if request else first.image.url
 
 
 class OrderSerializer(serializers.ModelSerializer):
