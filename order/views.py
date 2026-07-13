@@ -193,11 +193,11 @@ class OrderDetailView(APIView):
 
     @extend_schema(responses={200: OrderSerializer})
     def get(self, request, order_id):
-        order = get_object_or_404(
-            Order.objects.prefetch_related('items__product'),
-            id=order_id,
-            user=request.user
-        )
+        qs = Order.objects.prefetch_related('items__product')
+        if request.user.is_staff:
+            order = get_object_or_404(qs, id=order_id)
+        else:
+            order = get_object_or_404(qs, id=order_id, user=request.user)
         return Response(OrderSerializer(order).data)
 
 
