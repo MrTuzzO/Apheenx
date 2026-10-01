@@ -73,5 +73,6 @@ jobs:
             git reset --hard &&
             GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=no' git pull origin main &&
             docker compose up -d --build --remove-orphans &&
+            docker compose restart web &&
             docker compose exec -T web python manage.py migrate
           "
