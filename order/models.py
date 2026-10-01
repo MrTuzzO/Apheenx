@@ -28,7 +28,11 @@ class Order(models.Model):
     state = models.CharField(max_length=100, blank=True, default='')
     postal_code = models.CharField(max_length=20)
     country = models.CharField(max_length=100)
-    paypal_order_id = models.CharField(max_length=150, blank=True, null=True, unique=True)
+
+    # paypal_order_id = models.CharField(max_length=150, blank=True, null=True, unique=True)
+
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
+
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='pending', db_index=True)
     order_status = models.CharField(max_length=20, choices=ORDER_STATUS_CHOICES, default='pending', db_index=True)
     total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, validators=[MinValueValidator(0)])

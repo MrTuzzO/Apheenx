@@ -23,22 +23,23 @@ from rest_framework.renderers import JSONRenderer
 from core.response import SuccessResponse
 from core.pagination import StandardPagination
 from .emails import send_admin_order_notification
+from .stripe_service import create_stripe_checkout_session
 
 logger = logging.getLogger(__name__)
 
 
-PAYPAL_ORDER_EXPIRY_HOURS = 3
+# PAYPAL_ORDER_EXPIRY_HOURS = 3
 
-def _resolve_or_regenerate_video_approval(existing_order: VideoOrder) -> tuple[str, str]:
-    if existing_order.is_paypal_order_active:
-        return existing_order.paypal_order_id, existing_order.paypal_approval_url
+# def _resolve_or_regenerate_video_approval(existing_order: VideoOrder) -> tuple[str, str]:
+#     if existing_order.is_paypal_order_active:
+#         return existing_order.paypal_order_id, existing_order.paypal_approval_url
 
-    new_paypal_order_id, new_approval_url = create_paypal_video_order(existing_order)
-    existing_order.paypal_order_id = new_paypal_order_id
-    existing_order.paypal_approval_url = new_approval_url
-    existing_order.paypal_order_expires_at = timezone.now() + timedelta(hours=PAYPAL_ORDER_EXPIRY_HOURS)
-    existing_order.save(update_fields=["paypal_order_id", "paypal_approval_url", "paypal_order_expires_at"])
-    return new_paypal_order_id, new_approval_url
+#     new_paypal_order_id, new_approval_url = create_paypal_video_order(existing_order)
+#     existing_order.paypal_order_id = new_paypal_order_id
+#     existing_order.paypal_approval_url = new_approval_url
+#     existing_order.paypal_order_expires_at = timezone.now() + timedelta(hours=PAYPAL_ORDER_EXPIRY_HOURS)
+#     existing_order.save(update_fields=["paypal_order_id", "paypal_approval_url", "paypal_order_expires_at"])
+#     return new_paypal_order_id, new_approval_url
 
 
 class CreateOrderView(APIView):
@@ -102,23 +103,29 @@ class CreateOrderView(APIView):
             ])
 
         try:
-            paypal_order_id, approval_url = create_paypal_order(order)
+            # paypal_order_id, approval_url = create_paypal_order(order)
+            checkout_url, session_id = create_stripe_checkout_session(order, "product")
+
         except Exception as e:
             order.payment_status = 'failed'
             order.order_status = 'cancelled'
             order.save()
+
             return Response(
-                {"detail": f"PayPal error: {str(e)}"},
+                # {"detail": f"PayPal error: {str(e)}"},
+                {"detail": f"Stripe error: {str(e)}"},
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
-        order.paypal_order_id = paypal_order_id
+        # order.paypal_order_id = paypal_order_id
+        order.stripe_payment_intent_id = session_id
         order.save()
-
+        
         return Response({
             "order_id": order.id,
-            "paypal_order_id": paypal_order_id,
-            "approval_url": approval_url,
+            # "paypal_order_id": paypal_order_id,
+            # "approval_url": approval_url,
+            "payment_url": checkout_url,  # এই URL-এ ফ্রন্টএন্ড ইউজারকে রিডাইরেক্ট করবে
             "total_price": str(total_price),
             "items": [
                 {
@@ -297,21 +304,27 @@ class CreateVideoOrderView(APIView):
                     {"detail": "You already own this video."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            # Pending order exists; reuse active PayPal order or regenerate if expired.
+            
+            # --- Stripe Update for Existing Pending Order ---
             try:
-                paypal_order_id, approval_url = _resolve_or_regenerate_video_approval(existing)
+                # paypal_order_id, approval_url = _resolve_or_regenerate_video_approval(existing)
+                checkout_url, session_id = create_stripe_checkout_session(existing, "video")
+                existing.stripe_payment_intent_id = session_id
+                existing.save()
+
             except Exception as e:
-                logger.exception("Failed to get approval URL for pending VideoOrder id=%s", existing.id)
                 return Response(
-                    {"detail": f"PayPal error: {str(e)}"},
+                    # {"detail": f"PayPal error: {str(e)}"},
+                    {"detail": f"Stripe error: {str(e)}"},
                     status=status.HTTP_502_BAD_GATEWAY
                 )
 
             return Response({
                 "detail": "You have a pending order. Complete your payment.",
                 "order_id": existing.id,
-                "paypal_order_id": paypal_order_id,
-                "approval_url": approval_url,
+                # "paypal_order_id": paypal_order_id,
+                # "approval_url": approval_url,
+                "payment_url": checkout_url,
                 "amount": str(existing.amount),
             })
 
@@ -321,26 +334,34 @@ class CreateVideoOrderView(APIView):
             amount=video.price,
         )
 
+        # --- Stripe Update for New Order ---
         try:
-            paypal_order_id, approval_url = create_paypal_video_order(order)
+            # paypal_order_id, approval_url = create_paypal_video_order(order)
+            checkout_url, session_id = create_stripe_checkout_session(order, "video")
+            order.stripe_payment_intent_id = session_id
+            order.save()
+
         except Exception as e:
             order.payment_status = 'failed'
             order.save()
+
             return Response(
-                {"detail": f"PayPal error: {str(e)}"},
+                # {"detail": f"PayPal error: {str(e)}"},
+                {"detail": f"Stripe error: {str(e)}"},
                 status=status.HTTP_502_BAD_GATEWAY
             )
 
-        order.paypal_order_id = paypal_order_id
-        order.paypal_approval_url = approval_url
-        order.paypal_order_expires_at = timezone.now() + timedelta(hours=PAYPAL_ORDER_EXPIRY_HOURS)
-        order.save(update_fields=['paypal_order_id', 'paypal_approval_url', 'paypal_order_expires_at'])
+        # order.paypal_order_id = paypal_order_id
+        # order.paypal_approval_url = approval_url
+        # order.paypal_order_expires_at = timezone.now() + timedelta(hours=PAYPAL_ORDER_EXPIRY_HOURS)
+        # order.save(update_fields=['paypal_order_id', 'paypal_approval_url', 'paypal_order_expires_at'])
 
         return Response({
             "detail": "Order created. Complete your payment.",
             "order_id": order.id,
-            "paypal_order_id": paypal_order_id,
-            "approval_url": approval_url,
+            # "paypal_order_id": paypal_order_id,
+            # "approval_url": approval_url,
+            "payment_url": checkout_url,
             "amount": str(video.price),
             "currency": "USD",
         })
@@ -520,3 +541,42 @@ class PayPalWebhookView(APIView):
                 )
         except Order.DoesNotExist:
             logger.warning("PayPal webhook: Order id=%s not found.", order_id)
+
+import stripe
+from django.conf import settings
+from rest_framework.permissions import AllowAny
+from django.http import HttpResponse
+
+class StripeWebhookView(APIView):
+    permission_classes = [AllowAny] # Webhook-এর জন্য পারমিশন ওপেন থাকতে হবে
+    
+    def post(self, request, *args, **kwargs):
+        payload = request.body
+        sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
+        
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
+            )
+        except ValueError as e:
+            return HttpResponse(status=400)
+        except stripe.error.SignatureVerificationError as e:
+            return HttpResponse(status=400)
+        # Payment সফল হলে এই ইভেন্টটি ট্রিগার হবে
+        if event['type'] == 'checkout.session.completed':
+            session = event['data']['object']
+            order_type = session.get('metadata', {}).get('order_type')
+            order_id = session.get('metadata', {}).get('order_id')
+            
+            if order_type == 'product':
+                order = Order.objects.filter(id=order_id).first()
+                if order:
+                    order.payment_status = 'captured'
+                    order.save()
+            elif order_type == 'video':
+                order = VideoOrder.objects.filter(id=order_id).first()
+                if order:
+                    order.payment_status = 'captured'
+                    order.save()
+                    
+        return HttpResponse(status=200)

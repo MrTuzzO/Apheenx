@@ -63,9 +63,12 @@ class Video(models.Model):
 class VideoOrder(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='video_orders',)
     video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='orders')
-    paypal_order_id = models.CharField(max_length=150, unique=True, null=True, blank=True)
-    paypal_approval_url = models.URLField(max_length=500, null=True, blank=True)
-    paypal_order_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # paypal_order_id = models.CharField(max_length=150, unique=True, null=True, blank=True)
+    # paypal_approval_url = models.URLField(max_length=500, null=True, blank=True)
+    # paypal_order_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    stripe_payment_intent_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+
     payment_status = models.CharField(max_length=10, choices=PAYMENT_STATUS_CHOICES, default='pending', db_index=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     created_at = models.DateTimeField(auto_now_add=True)
@@ -82,14 +85,14 @@ class VideoOrder(models.Model):
     def is_paid(self):
         return self.payment_status == 'captured'
 
-    @property
-    def is_paypal_order_active(self):
-        return bool(
-            self.paypal_order_id
-            and self.paypal_approval_url
-            and self.paypal_order_expires_at
-            and timezone.now() < self.paypal_order_expires_at
-        )
+    # @property
+    # def is_paypal_order_active(self):
+    #     return bool(
+    #         self.paypal_order_id
+    #         and self.paypal_approval_url
+    #         and self.paypal_order_expires_at
+    #         and timezone.now() < self.paypal_order_expires_at
+    #     )
 
     def __str__(self):
         return f'{self.user} | {self.video.title} | {self.payment_status}'
