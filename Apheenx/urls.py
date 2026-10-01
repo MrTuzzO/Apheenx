@@ -17,6 +17,7 @@ urlpatterns = [
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema")),
     path("api/redoc/", SpectacularRedocView.as_view(url_name="schema")),
+    path("api/ping/", lambda r: __import__('django.http').http.JsonResponse({"status": "ok"})),
 
     path('api/v1/auth/', include('user.urls')),
     path('api/v1/', include('product.urls')),
