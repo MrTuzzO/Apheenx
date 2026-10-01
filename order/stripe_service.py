@@ -18,7 +18,9 @@ def create_stripe_checkout_session(order, order_type="product"):
             line_items.append({
                 'price_data': {
                     'currency': 'usd',
-                    'product_data': {'name': item.product.name or item.product_name or "Product"},
+                    'product_data': {
+                        'name': str(item.product.name).strip() if (item.product and str(item.product.name).strip()) else "Apheenx Product"
+                    },
                     'unit_amount': int(item.unit_price * 100), # Stripe সেন্টস-এ কাজ করে (100 cents = $1)
                 },
                 'quantity': item.quantity,
@@ -38,7 +40,6 @@ def create_stripe_checkout_session(order, order_type="product"):
 
     # Stripe Checkout Session তৈরি
     session = stripe.checkout.Session.create(
-        payment_method_types=['card'],
         line_items=line_items,
         mode='payment',
         success_url=success_url,
