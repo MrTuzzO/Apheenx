@@ -262,3 +262,38 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 1073741824
 STRIPE_PUBLIC_KEY = os.getenv('STRIPE_PUBLIC_KEY', '')
 STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
 STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+
+# --- 기존 Media Settings (লোকাল স্টোরেজ) ---
+# MEDIA_URL = '/media/'
+# MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# --- New Cloudflare R2 Settings ---
+
+CLOUDFLARE_ACCOUNT_ID = os.getenv('CLOUDFLARE_ACCOUNT_ID', '')
+
+# django-storages কনফিগারেশন
+AWS_ACCESS_KEY_ID = os.getenv('R2_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('R2_SECRET_ACCESS_KEY')
+AWS_STORAGE_BUCKET_NAME = os.getenv('R2_BUCKET_NAME')
+AWS_S3_ENDPOINT_URL = f"https://{CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+# Cloudflare R2 তে সাধারণত Signature Version 4 ব্যবহার হয়
+AWS_S3_SIGNATURE_VERSION = 's3v4'
+AWS_S3_FILE_OVERWRITE = False
+AWS_DEFAULT_ACL = None 
+
+# কাস্টম ডোমেইন থাকলে সেটি ব্যবহার করবে, না হলে ডিফল্ট R2 লিংক
+AWS_S3_CUSTOM_DOMAIN = os.getenv('R2_CUSTOM_DOMAIN', None)
+
+# ডিফল্ট স্টোরেজ হিসেবে S3Boto3Storage সেট করা
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+# (Optional) যদি পুরনো ভার্সনের Django হয় (v4.2 এর আগের), তাহলে নিচের লাইনটি আনকমেন্ট করুন:
+# DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'

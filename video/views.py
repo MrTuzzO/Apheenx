@@ -102,7 +102,7 @@ class VideoAccessCheckView(APIView):
 class VideoStreamView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(request=None, responses={200: OpenApiTypes.BINARY})
+    @extend_schema(request=None, responses={200: OpenApiTypes.OBJECT})
     def get(self, request, video_id):
         video = get_object_or_404(Video, id=video_id, status='published')
 
@@ -118,91 +118,127 @@ class VideoStreamView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if not video.main_video:
+        if not video.cf_stream_uid:
             return Response(
-                {"detail": "Video file not available."},
+                {"detail": "Video is processing or not available yet."},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Absolute path + existence check
-        filepath = os.path.join(settings.MEDIA_ROOT, str(video.main_video))
-        if not os.path.exists(filepath):
-            return Response(
-                {"detail": "Video file not found on server."},
-                status=status.HTTP_404_NOT_FOUND
-            )
+        # ফ্রন্টএন্ড এই UID দিয়ে Cloudflare Stream Player-এ ভিডিও প্লে করবে
+        # অথবা চাইলে HLS URL-ও রিটার্ন করতে পারি
+        customer_code = os.getenv("CLOUDFLARE_CUSTOMER_CODE", "আপনার_কাস্টমার_কোড")
+        hls_url = f"https://customer-{customer_code}.cloudflarestream.com/{video.cf_stream_uid}/manifest/video.m3u8"
 
-        file_size = os.path.getsize(filepath)
-        content_type, _ = mimetypes.guess_type(filepath)
-        content_type = content_type or 'video/mp4'
+        return Response({
+            "stream_uid": video.cf_stream_uid,
+            "hls_url": hls_url
+        }, status=status.HTTP_200_OK)
 
-        range_header = request.META.get('HTTP_RANGE', '').strip()
 
-        if range_header:
-            #  Partial content (seeking) 
-            try:
-                range_val = range_header.replace('bytes=', '')
-                start_str, end_str = range_val.split('-')
-                start = int(start_str) if start_str else 0
-                end = int(end_str) if end_str else file_size - 1
-                end = min(end, file_size - 1)
-            except (ValueError, AttributeError):
-                return Response(
-                    status=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE
-                )
+# class VideoStreamView(APIView):
+#     permission_classes = [IsAuthenticated]
 
-            if start > end or start >= file_size:
-                return Response(
-                    status=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE
-                )
+#     @extend_schema(request=None, responses={200: OpenApiTypes.BINARY})
+#     def get(self, request, video_id):
+#         video = get_object_or_404(Video, id=video_id, status='published')
 
-            length = end - start + 1
+#         has_access = VideoOrder.objects.filter(
+#             user=request.user,
+#             video=video,
+#             payment_status='captured'
+#         ).exists()
 
-            def range_iterator(path, start, length, chunk=8192):
-                with open(path, 'rb') as f:
-                    f.seek(start)
-                    remaining = length
-                    while remaining > 0:
-                        data = f.read(min(chunk, remaining))
-                        if not data:
-                            break
-                        remaining -= len(data)
-                        yield data
+#         if not has_access:
+#             return Response(
+#                 {"detail": "Purchase this video to watch it."},
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
 
-            response = StreamingHttpResponse(
-                range_iterator(filepath, start, length),
-                content_type=content_type,
-                status=206
-            )
-            response['Content-Range'] = f'bytes {start}-{end}/{file_size}'
-            response['Content-Length'] = length
+#         if not video.main_video:
+#             return Response(
+#                 {"detail": "Video file not available."},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
 
-        else:
-            #  Full file 
-            def full_iterator(path, chunk=8192):
-                with open(path, 'rb') as f:
-                    while True:
-                        data = f.read(chunk)
-                        if not data:
-                            break
-                        yield data
+#         # Absolute path + existence check
+#         filepath = os.path.join(settings.MEDIA_ROOT, str(video.main_video))
+#         if not os.path.exists(filepath):
+#             return Response(
+#                 {"detail": "Video file not found on server."},
+#                 status=status.HTTP_404_NOT_FOUND
+#             )
 
-            response = StreamingHttpResponse(
-                full_iterator(filepath),
-                content_type=content_type,
-                status=200
-            )
-            response['Content-Length'] = file_size
+#         file_size = os.path.getsize(filepath)
+#         content_type, _ = mimetypes.guess_type(filepath)
+#         content_type = content_type or 'video/mp4'
 
-        #  Security headers 
-        response['Accept-Ranges'] = 'bytes'
-        response['Content-Disposition'] = 'inline'
-        response['X-Content-Type-Options'] = 'nosniff'
-        response['Cache-Control'] = 'no-store, no-cache, must-revalidate'
-        response['Pragma'] = 'no-cache'
-        response['X-Frame-Options'] = 'SAMEORIGIN'
+#         range_header = request.META.get('HTTP_RANGE', '').strip()
 
-        return response
+#         if range_header:
+#             #  Partial content (seeking) 
+#             try:
+#                 range_val = range_header.replace('bytes=', '')
+#                 start_str, end_str = range_val.split('-')
+#                 start = int(start_str) if start_str else 0
+#                 end = int(end_str) if end_str else file_size - 1
+#                 end = min(end, file_size - 1)
+#             except (ValueError, AttributeError):
+#                 return Response(
+#                     status=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE
+#                 )
+
+#             if start > end or start >= file_size:
+#                 return Response(
+#                     status=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE
+#                 )
+
+#             length = end - start + 1
+
+#             def range_iterator(path, start, length, chunk=8192):
+#                 with open(path, 'rb') as f:
+#                     f.seek(start)
+#                     remaining = length
+#                     while remaining > 0:
+#                         data = f.read(min(chunk, remaining))
+#                         if not data:
+#                             break
+#                         remaining -= len(data)
+#                         yield data
+
+#             response = StreamingHttpResponse(
+#                 range_iterator(filepath, start, length),
+#                 content_type=content_type,
+#                 status=206
+#             )
+#             response['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+#             response['Content-Length'] = length
+
+#         else:
+#             #  Full file 
+#             def full_iterator(path, chunk=8192):
+#                 with open(path, 'rb') as f:
+#                     while True:
+#                         data = f.read(chunk)
+#                         if not data:
+#                             break
+#                         yield data
+
+#             response = StreamingHttpResponse(
+#                 full_iterator(filepath),
+#                 content_type=content_type,
+#                 status=200
+#             )
+#             response['Content-Length'] = file_size
+
+#         #  Security headers 
+#         response['Accept-Ranges'] = 'bytes'
+#         response['Content-Disposition'] = 'inline'
+#         response['X-Content-Type-Options'] = 'nosniff'
+#         response['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+#         response['Pragma'] = 'no-cache'
+#         response['X-Frame-Options'] = 'SAMEORIGIN'
+
+#         return response
 
 def protected_video_media(request, path):
     if not request.user.is_staff:

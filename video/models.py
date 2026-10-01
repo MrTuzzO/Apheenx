@@ -40,6 +40,9 @@ class Video(models.Model):
     views_count = models.PositiveIntegerField(default=0)
     income = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     is_featured = models.BooleanField(default=False, db_index=True)
+
+    cf_stream_uid = models.CharField(max_length=100, blank=True, null=True, help_text="Cloudflare Stream UID")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -59,13 +62,30 @@ class Video(models.Model):
             return f'{hours:02d}:{minutes:02d}:{seconds:02d}'
         return f'{minutes:02d}:{seconds:02d}'
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        
+        # যদি ভিডিও আপলোড করা হয় এবং Cloudflare UID না থাকে, তাহলে Stream API-তে পাঠাবো
+        if self.main_video and not self.cf_stream_uid:
+            try:
+                from .cloudflare_service import ingest_video_to_cloudflare_stream
+                # R2 থেকে পাবলিক/সাইন্ড লিংক জেনারেট করে Cloudflare Stream-এ পাঠানো হচ্ছে
+                video_url = self.main_video.url 
+                uid = ingest_video_to_cloudflare_stream(video_url)
+                if uid:
+                    self.cf_stream_uid = uid
+                    # শুধুমাত্র cf_stream_uid আপডেট করছি
+                    super().save(update_fields=['cf_stream_uid'])
+            except Exception as e:
+                print(f"Cloudflare Stream Upload Error: {e}")
+
 
 class VideoOrder(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='video_orders',)
     video = models.ForeignKey(Video, on_delete=models.CASCADE, related_name='orders')
-    # paypal_order_id = models.CharField(max_length=150, unique=True, null=True, blank=True)
-    # paypal_approval_url = models.URLField(max_length=500, null=True, blank=True)
-    # paypal_order_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    paypal_order_id = models.CharField(max_length=150, unique=True, null=True, blank=True)
+    paypal_approval_url = models.URLField(max_length=500, null=True, blank=True)
+    paypal_order_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     stripe_payment_intent_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
 

@@ -29,7 +29,7 @@ class Order(models.Model):
     postal_code = models.CharField(max_length=20)
     country = models.CharField(max_length=100)
 
-    # paypal_order_id = models.CharField(max_length=150, blank=True, null=True, unique=True)
+    paypal_order_id = models.CharField(max_length=150, blank=True, null=True, unique=True)
 
     stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True, unique=True)
 
