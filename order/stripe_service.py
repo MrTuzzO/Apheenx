@@ -18,7 +18,7 @@ def create_stripe_checkout_session(order, order_type="product"):
             line_items.append({
                 'price_data': {
                     'currency': 'usd',
-                    'product_data': {'name': item.product_name},
+                    'product_data': {'name': item.product.name or item.product_name or "Product"},
                     'unit_amount': int(item.unit_price * 100), # Stripe সেন্টস-এ কাজ করে (100 cents = $1)
                 },
                 'quantity': item.quantity,
