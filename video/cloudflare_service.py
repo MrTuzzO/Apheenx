@@ -3,7 +3,7 @@ import requests
 
 def ingest_video_to_cloudflare_stream(video_url):
     account_id = os.getenv('CLOUDFLARE_ACCOUNT_ID')
-    api_token = os.getenv('CLOUDFLARE_STREAM_API_TOKEN')  # এটি R2-এর কি থেকে আলাদা, এটি Cloudflare API Token
+    api_token = os.getenv('CLOUDFLARE_STREAM_API_TOKEN') or os.getenv('CLOUDFLARE_API_TOKEN')
     
     if not account_id or not api_token:
         return None
