@@ -580,8 +580,10 @@ class StripeWebhookView(APIView):
                 payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
             )
         except ValueError as e:
+            print(f"Stripe Webhook ValueError: {e}")
             return HttpResponse(status=400)
         except stripe.error.SignatureVerificationError as e:
+            print(f"Stripe Signature Verification Error: {e}")
             return HttpResponse(status=400)
         # Payment সফল হলে এই ইভেন্টটি ট্রিগার হবে
         if event['type'] == 'checkout.session.completed':
