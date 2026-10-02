@@ -305,16 +305,26 @@ class CreateVideoOrderView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
             
+            # If video is free, fulfill it immediately
+            if video.price == 0:
+                with transaction.atomic():
+                    existing.payment_status = 'captured'
+                    existing.save()
+                return Response({
+                    "detail": "Video is free. Access granted successfully.",
+                    "order_id": existing.id,
+                    "payment_url": None,
+                    "amount": "0.00",
+                })
+            
             # --- Stripe Update for Existing Pending Order ---
             try:
-                # paypal_order_id, approval_url = _resolve_or_regenerate_video_approval(existing)
                 checkout_url, session_id = create_stripe_checkout_session(existing, "video")
                 existing.stripe_payment_intent_id = session_id
                 existing.save()
 
             except Exception as e:
                 return Response(
-                    # {"detail": f"PayPal error: {str(e)}"},
                     {"detail": f"Stripe error: {str(e)}"},
                     status=status.HTTP_502_BAD_GATEWAY
                 )
@@ -322,8 +332,6 @@ class CreateVideoOrderView(APIView):
             return Response({
                 "detail": "You have a pending order. Complete your payment.",
                 "order_id": existing.id,
-                # "paypal_order_id": paypal_order_id,
-                # "approval_url": approval_url,
                 "payment_url": checkout_url,
                 "amount": str(existing.amount),
             })
@@ -333,6 +341,19 @@ class CreateVideoOrderView(APIView):
             video=video,
             amount=video.price,
         )
+
+        # If video is free, fulfill it immediately
+        if video.price == 0:
+            with transaction.atomic():
+                order.payment_status = 'captured'
+                order.save()
+            return Response({
+                "detail": "Video is free. Access granted successfully.",
+                "order_id": order.id,
+                "payment_url": None,
+                "amount": "0.00",
+                "currency": "USD",
+            })
 
         # --- Stripe Update for New Order ---
         try:
