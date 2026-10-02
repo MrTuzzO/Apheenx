@@ -154,49 +154,13 @@ class CapturePaymentView(APIView):
                 {"detail": "Already captured.", "order": OrderSerializer(order).data},
                 status=status.HTTP_200_OK
             )
-        if order.payment_status == 'failed':
-            return Response(
-                {"detail": "Order failed. Please create a new order."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            result = capture_paypal_order(order.paypal_order_id)
-        except Exception as e:
-            order.payment_status = 'failed'
-            order.save()
-            return Response(
-                {"detail": f"Capture failed: {str(e)}"},
-                status=status.HTTP_502_BAD_GATEWAY
-            )
-
-        if result.get('status') != 'COMPLETED':
-            order.payment_status = 'failed'
-            order.save()
-            return Response(
-                {"detail": f"PayPal returned: {result.get('status')}. Not completed."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Payment successful — fulfill order
-        with transaction.atomic():
-            order.payment_status = 'captured'
-            order.order_status = 'processing'
-            order.save()
-
-            # Decrement stock
-            for item in order.items.select_related('product'):
-                Product.objects.filter(id=item.product_id).update(
-                    stock=models.F('stock') - item.quantity
-                )
-
-        # Send async email to admin
-        send_admin_order_notification(order.id)
-
-        return Response({
-            "detail": "Payment successful.",
-            "order": OrderSerializer(order).data,
-        })
+        
+        # Since Stripe Webhook handles the actual capture, this endpoint is just a fallback for the frontend.
+        # If the webhook hasn't fired yet, we tell the frontend it's still pending.
+        return Response(
+            {"detail": "Payment is still processing via Stripe. Please wait a moment."},
+            status=status.HTTP_202_ACCEPTED
+        )
 
 
 class OrderDetailView(APIView):
@@ -400,41 +364,13 @@ class CaptureVideoPaymentView(APIView):
                 {"detail": "Already paid.", "order": VideoOrderSerializer(order, context={'request': request}).data},
                 status=status.HTTP_200_OK
             )
-        if order.payment_status == 'failed':
-            return Response(
-                {"detail": "Order failed. Please create a new order."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            result = capture_paypal_order(order.paypal_order_id)
-        except Exception as e:
-            order.payment_status = 'failed'
-            order.save()
-            return Response(
-                {"detail": f"Capture failed: {str(e)}"},
-                status=status.HTTP_502_BAD_GATEWAY
-            )
-
-        if result.get('status') != 'COMPLETED':
-            order.payment_status = 'failed'
-            order.save()
-            return Response(
-                {"detail": f"PayPal returned: {result.get('status')}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        with transaction.atomic():
-            order.payment_status = 'captured'
-            order.save()
-            Video.objects.filter(id=order.video_id).update(
-                income=models.F('income') + order.amount
-            )
-
-        return Response({
-            "detail": "Payment successful. You can now watch the video.",
-            "order": VideoOrderSerializer(order, context={'request': request}).data,
-        })
+        
+        # Since Stripe Webhook handles the actual capture, this endpoint is just a fallback for the frontend.
+        # If the webhook hasn't fired yet, we tell the frontend it's still pending.
+        return Response(
+            {"detail": "Payment is still processing via Stripe. Please wait a moment."},
+            status=status.HTTP_202_ACCEPTED
+        )
 
 
 class UserVideoOrderListView(APIView):
