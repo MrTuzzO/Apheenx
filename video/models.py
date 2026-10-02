@@ -63,10 +63,21 @@ class Video(models.Model):
         return f'{minutes:02d}:{seconds:02d}'
 
     def save(self, *args, **kwargs):
+        # Check if the main_video was changed
+        video_changed = False
+        if self.pk:
+            old_obj = Video.objects.filter(pk=self.pk).first()
+            if old_obj and old_obj.main_video != self.main_video:
+                self.cf_stream_uid = None  # Clear old UID
+                video_changed = True
+        else:
+            if self.main_video:
+                video_changed = True
+
         super().save(*args, **kwargs)
         
-        # যদি ভিডিও আপলোড করা হয় এবং Cloudflare UID না থাকে, তাহলে Stream API-তে পাঠাবো
-        if self.main_video and not self.cf_stream_uid:
+        # Only ingest if video changed and we don't have a stream uid yet
+        if self.main_video and not self.cf_stream_uid and video_changed:
             try:
                 from .cloudflare_service import ingest_video_to_cloudflare_stream
                 # R2 থেকে পাবলিক/সাইন্ড লিংক জেনারেট করে Cloudflare Stream-এ পাঠানো হচ্ছে
@@ -78,6 +89,7 @@ class Video(models.Model):
                     super().save(update_fields=['cf_stream_uid'])
             except Exception as e:
                 print(f"Cloudflare Stream Upload Error: {e}")
+
 
 
 class VideoOrder(models.Model):
