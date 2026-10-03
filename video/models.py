@@ -118,26 +118,22 @@ class Video(models.Model):
                 pass
 
     def delete(self, *args, **kwargs):
-        from .cloudflare_service import delete_video_from_cloudflare_stream
-        # Delete from Cloudflare Stream
-        if self.cf_stream_uid:
-            try:
-                delete_video_from_cloudflare_stream(self.cf_stream_uid)
-            except Exception:
-                pass
-        
-        # Delete files from R2
-        try:
-            if self.main_video:
-                self.main_video.delete(save=False)
-            if self.trailer:
-                self.trailer.delete(save=False)
-            if self.thumbnail:
-                self.thumbnail.delete(save=False)
-        except Exception:
-            pass
-            
+        # The actual file deletion and Cloudflare Stream deletion 
+        # is now handled by django-cleanup (for files) and pre_delete signal (for stream)
         super().delete(*args, **kwargs)
+
+
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
+
+@receiver(pre_delete, sender=Video)
+def delete_video_from_stream(sender, instance, **kwargs):
+    if instance.cf_stream_uid:
+        try:
+            from .cloudflare_service import delete_video_from_cloudflare_stream
+            delete_video_from_cloudflare_stream(instance.cf_stream_uid)
+        except Exception as e:
+            print(f"Error deleting from Cloudflare Stream during signal: {e}")
 
 
 
