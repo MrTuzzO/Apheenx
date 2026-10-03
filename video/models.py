@@ -65,17 +65,44 @@ class Video(models.Model):
     def save(self, *args, **kwargs):
         # Check if the main_video was changed
         video_changed = False
+        old_cf_uid = None
+        old_main_video = None
+        old_trailer = None
+        old_thumbnail = None
+
         if self.pk:
             old_obj = Video.objects.filter(pk=self.pk).first()
-            if old_obj and old_obj.main_video != self.main_video:
-                self.cf_stream_uid = None  # Clear old UID
-                video_changed = True
+            if old_obj:
+                if old_obj.main_video != self.main_video:
+                    old_cf_uid = old_obj.cf_stream_uid
+                    old_main_video = old_obj.main_video
+                    self.cf_stream_uid = None  # Clear old UID
+                    video_changed = True
+                
+                if old_obj.trailer != self.trailer:
+                    old_trailer = old_obj.trailer
+                if old_obj.thumbnail != self.thumbnail:
+                    old_thumbnail = old_obj.thumbnail
         else:
             if self.main_video:
                 video_changed = True
 
         super().save(*args, **kwargs)
         
+        # Cleanup replaced files from Cloudflare and R2
+        try:
+            from .cloudflare_service import delete_video_from_cloudflare_stream
+            if old_cf_uid:
+                delete_video_from_cloudflare_stream(old_cf_uid)
+            if old_main_video:
+                old_main_video.delete(save=False)
+            if old_trailer:
+                old_trailer.delete(save=False)
+            if old_thumbnail:
+                old_thumbnail.delete(save=False)
+        except Exception:
+            pass
+
         # Only ingest if video changed and we don't have a stream uid yet
         if self.main_video and not self.cf_stream_uid and video_changed:
             try:
@@ -88,7 +115,29 @@ class Video(models.Model):
                     # শুধুমাত্র cf_stream_uid আপডেট করছি
                     super().save(update_fields=['cf_stream_uid'])
             except Exception as e:
-                print(f"Cloudflare Stream Upload Error: {e}")
+                pass
+
+    def delete(self, *args, **kwargs):
+        from .cloudflare_service import delete_video_from_cloudflare_stream
+        # Delete from Cloudflare Stream
+        if self.cf_stream_uid:
+            try:
+                delete_video_from_cloudflare_stream(self.cf_stream_uid)
+            except Exception:
+                pass
+        
+        # Delete files from R2
+        try:
+            if self.main_video:
+                self.main_video.delete(save=False)
+            if self.trailer:
+                self.trailer.delete(save=False)
+            if self.thumbnail:
+                self.thumbnail.delete(save=False)
+        except Exception:
+            pass
+            
+        super().delete(*args, **kwargs)
 
 
 

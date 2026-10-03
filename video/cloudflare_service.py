@@ -26,3 +26,20 @@ def ingest_video_to_cloudflare_stream(video_url):
         return response.json()['result']['uid']
     
     return None
+
+def delete_video_from_cloudflare_stream(uid):
+    account_id = os.getenv('CLOUDFLARE_ACCOUNT_ID')
+    api_token = os.getenv('CLOUDFLARE_STREAM_API_TOKEN') or os.getenv('CLOUDFLARE_API_TOKEN')
+    
+    if not account_id or not api_token or not uid:
+        return False
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/stream/{uid}"
+
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json"
+    }
+
+    response = requests.delete(url, headers=headers)
+    return response.status_code == 200
