@@ -155,7 +155,35 @@ class CapturePaymentView(APIView):
                 status=status.HTTP_200_OK
             )
         
-        # Since Stripe Webhook handles the actual capture, this endpoint is just a fallback for the frontend.
+        # Query Stripe directly to see if the session was paid (fallback for webhook delays)
+        if order.stripe_payment_intent_id:
+            import stripe
+            from django.conf import settings
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            try:
+                session = stripe.checkout.Session.retrieve(order.stripe_payment_intent_id)
+                if session.payment_status == 'paid':
+                    with transaction.atomic():
+                        order.payment_status = 'captured'
+                        order.order_status = 'processing'
+                        order.save()
+
+                        # Decrement stock
+                        for item in order.items.select_related('product'):
+                            Product.objects.filter(id=item.product_id).update(
+                                stock=models.F('stock') - item.quantity
+                            )
+
+                    # Send async email to admin
+                    send_admin_order_notification(order.id)
+
+                    return Response({
+                        "detail": "Payment successful.",
+                        "order": OrderSerializer(order).data,
+                    }, status=status.HTTP_200_OK)
+            except Exception as e:
+                logger.error(f"Error retrieving Stripe session: {e}")
+
         # If the webhook hasn't fired yet, we tell the frontend it's still pending.
         return Response(
             {"detail": "Payment is still processing via Stripe. Please wait a moment."},
@@ -311,10 +339,13 @@ class CreateVideoOrderView(APIView):
             with transaction.atomic():
                 order.payment_status = 'captured'
                 order.save()
+            
+            base_url = settings.FRONTEND_BASE_URL.rstrip('/')
+            fake_success_url = f"{base_url}/payment/success?order_type=video&order_id={order.id}"
             return Response({
                 "detail": "Video is free. Access granted successfully.",
                 "order_id": order.id,
-                "payment_url": None,
+                "payment_url": fake_success_url,
                 "amount": "0.00",
                 "currency": "USD",
             })
@@ -365,7 +396,26 @@ class CaptureVideoPaymentView(APIView):
                 status=status.HTTP_200_OK
             )
         
-        # Since Stripe Webhook handles the actual capture, this endpoint is just a fallback for the frontend.
+        # Query Stripe directly to see if the session was paid (fallback for webhook delays)
+        if order.stripe_payment_intent_id:
+            import stripe
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            try:
+                session = stripe.checkout.Session.retrieve(order.stripe_payment_intent_id)
+                if session.payment_status == 'paid':
+                    with transaction.atomic():
+                        order.payment_status = 'captured'
+                        order.save()
+                        Video.objects.filter(id=order.video_id).update(
+                            income=models.F('income') + order.amount
+                        )
+                    return Response({
+                        "detail": "Payment successful. You can now watch the video.",
+                        "order": VideoOrderSerializer(order, context={'request': request}).data,
+                    }, status=status.HTTP_200_OK)
+            except Exception as e:
+                logger.error(f"Error retrieving Stripe session: {e}")
+
         # If the webhook hasn't fired yet, we tell the frontend it's still pending.
         return Response(
             {"detail": "Payment is still processing via Stripe. Please wait a moment."},
