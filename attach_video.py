@@ -20,13 +20,11 @@ def attach():
         video = Video.objects.get(id=video_id)
         print(f"Found Video: {video.title}")
         
-        # Attach the file to main_video
+        # Attach the file to trailer
         with open(file_path, 'rb') as f:
-            # We clear the stream UID so it re-ingests
-            video.cf_stream_uid = None
-            video.main_video.save('img-7040-1_xfpHjWen.mp4', File(f))
+            video.trailer.save('img-7040-1_xfpHjWen.mp4', File(f))
             
-        print("Success! The video has been uploaded to R2 and linked to Cloudflare Stream.")
+        print("Success! The video has been uploaded to R2 and linked to the Trailer field.")
     except Exception as e:
         print(f"Failed: {e}")
 
